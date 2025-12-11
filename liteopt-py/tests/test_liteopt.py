@@ -17,11 +17,11 @@ def main():
         f, grad, x0,
         step_size=1e-3,
         max_iters=200_000,
-        tol_grad=1e-4,
+        tol_grad=1e-10,
     )
     print("converged:", converged)
     print("x*:", x_star, "f(x*):", f_star)
-    print("expected x*:", [1.0, 1.0], "f(x*):", 0.0)
+    print("expected x*:", [1.0, 1.0], "f(x*):", f([1.0, 1.0]))
 
 if __name__ == "__main__":
     main()

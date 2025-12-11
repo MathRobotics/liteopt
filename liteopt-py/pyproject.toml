@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "liteopt"
 version = "0.1.0"
 description = "Lightweight gradient descent optimizer implemented in Rust"
-readme = "README.md"
+readme = "../README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [
