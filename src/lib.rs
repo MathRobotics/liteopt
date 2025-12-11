@@ -7,6 +7,7 @@
 //!
 //! Start with simple optimization on R^n.
 
+use pyo3::prelude::*;
 /// Trait that represents an abstract "space".
 ///
 /// MVP implements only EuclideanSpace (Vec<f64>), leaving room for
@@ -347,4 +348,77 @@ mod tests {
         assert!((result.x[0] - PI/3.0).abs() < 1e-3);
         assert!((result.x[1] - PI/6.0).abs() < 1e-3);
     }
+}
+
+///
+/// Gradient Descent optimizer exposed to Python.
+///   import liteopt
+///   x_star, f_star, converged = liteopt.gd(f, grad, x0, step_size, max_iters, tol_grad)
+///
+/// f:    callable(x: list[float]) -> float
+/// grad: callable(x: list[float]) -> list[float]
+#[pyfunction]
+fn gd(
+    f: Py<PyAny>,
+    grad: Py<PyAny>,
+    x0: Vec<f64>,
+    step_size: f64,
+    max_iters: usize,
+    tol_grad: f64,
+) -> PyResult<(Vec<f64>, f64, bool)> {
+    let space = EuclideanSpace;
+    let solver = GradientDescent {
+        space,
+        step_size,
+        max_iters,
+        tol_grad,
+    };
+
+    // closure that calls the Python function f(x)
+    let f_closure = move |x: &Vec<f64>| -> f64 {
+        Python::with_gil(|py| {
+            let arg = x.clone();
+            let res = f
+                .call1(py, (arg,))
+                .expect("failed to call objective function from Python");
+            res.extract::<f64>(py)
+                .expect("objective function must return float")
+        })
+    };
+
+    // closure that calls the Python function grad(x)
+    let grad_closure = move |x: &Vec<f64>, grad_out: &mut Vec<f64>| {
+        Python::with_gil(|py| {
+            let arg = x.clone();
+            let res = grad
+                .call1(py, (arg,))
+                .expect("failed to call gradient function from Python");
+            let g: Vec<f64> = res
+                .extract(py)
+                .expect("gradient function must return list[float] or sequence of floats");
+
+            assert_eq!(
+                g.len(),
+                grad_out.len(),
+                "gradient length mismatch: expected {}, got {}",
+                grad_out.len(),
+                g.len()
+            );
+
+            for (o, gi) in grad_out.iter_mut().zip(g.iter()) {
+                *o = *gi;
+            }
+        })
+    };
+
+    let result = solver.minimize_with_fn(x0, f_closure, grad_closure);
+
+    Ok((result.x, result.f, result.converged))
+}
+
+/// entry point for the liteopt Python module
+#[pymodule]
+fn liteopt(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(gd, m)?)?;
+    Ok(())
 }
