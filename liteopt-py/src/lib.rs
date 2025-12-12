@@ -1,4 +1,4 @@
-use liteopt_core::{EuclideanSpace, GradientDescent};
+use liteopt_core::{space::EuclideanSpace, gd::GradientDescent};
 use pyo3::prelude::*;
 
 /// Gradient Descent optimizer exposed to Python.
