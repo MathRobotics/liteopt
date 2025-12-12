@@ -3,13 +3,13 @@ import liteopt
 
 def f(x):
     x = np.asarray(x)
-    return float((1.0 - x[0])**2 + 100.0 * (x[1] - x[0]**2)**2)
+    return np.array(100.0 * (x[1] - x[0]**2)**2 + (1.0 - x[0])**2)
 
 def grad(x):
     x = np.asarray(x)
     df_dx = -2.0 * (1.0 - x[0]) - 400.0 * x[0] * (x[1] - x[0]**2)
     df_dy = 200.0 * (x[1] - x[0]**2)
-    return [float(df_dx), float(df_dy)]
+    return np.array([df_dx, df_dy])
 
 def main():
     x0 = [-1.2, 1.0]
