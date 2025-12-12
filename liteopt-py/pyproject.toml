@@ -1,12 +1,12 @@
 [build-system]
-requires = ["maturin>=1.5,<2.0"]
+requires = ["maturin>=1.10,<2.0"]
 build-backend = "maturin"
 
 [project]
 name = "liteopt"
-version = "0.1.0"
+version = "0.1.1"
 description = "Lightweight gradient descent optimizer implemented in Rust"
-readme = "../README.md"
+readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [
@@ -20,13 +20,16 @@ classifiers = [
   "Operating System :: OS Independent",
 ]
 
-dependencies = [
-    "numpy>=1.24.4",
-]
-
 [project.urls]
 Homepage = "https://github.com/MathRobotics/liteopt"
 Repository = "https://github.com/MathRobotics/liteopt"
 
 [tool.maturin]
+
+[dependency-groups]
+dev = [
+    "maturin>=1.10.2",
+    "numpy>=1.24.4",
+]
+
 # module-name = "liteopt"
