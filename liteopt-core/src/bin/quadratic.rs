@@ -1,4 +1,4 @@
-use liteopt::{EuclideanSpace, GradientDescent};
+use liteopt::{space::EuclideanSpace, gd::GradientDescent};
 
 fn main() {
     let space = EuclideanSpace;
