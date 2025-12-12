@@ -9,22 +9,31 @@ use numpy::{PyArrayMethods, PyUntypedArrayMethods};
 ///
 /// f:    callable(x: list[float]) -> float
 /// grad: callable(x: list[float]) -> list[float]
-#[pyfunction]
+#[pyfunction(
+    signature = (
+        f,
+        grad,
+        x0,
+        step_size = None,
+        max_iters = None,
+        tol_grad = None
+    )
+)]
 fn gd(
     py: Python<'_>,
     f: Py<PyAny>,
     grad: Py<PyAny>,
     x0: Vec<f64>,
-    step_size: f64,
-    max_iters: usize,
-    tol_grad: f64,
+    step_size: Option<f64>,
+    max_iters: Option<usize>,
+    tol_grad: Option<f64>,
 ) -> PyResult<(Vec<f64>, f64, bool)> {
     let space = EuclideanSpace;
     let solver = GradientDescent {
         space,
-        step_size,
-        max_iters,
-        tol_grad,
+        step_size: step_size.unwrap_or(1e-3),
+        max_iters: max_iters.unwrap_or(100),
+        tol_grad: tol_grad.unwrap_or(1e-6),
     };
 
     let f_obj = f.clone_ref(py);
@@ -73,32 +82,47 @@ fn gd(
 /// residual: callable(x: list[float]) -> list[float]           (len = m)
 /// jacobian: callable(x: list[float]) -> list[float]           (len = m*n, row-major)
 /// project : Optional[callable(x: list[float]) -> list[float]] (len = n)  or None
-#[pyfunction]
+#[pyfunction(
+    signature = (
+        residual,
+        jacobian,
+        x0,
+        project = None,
+        lambda_ = None,
+        step_scale = None,
+        max_iters = None,
+        tol_r = None,
+        tol_dx = None,
+        line_search = None,
+        ls_beta = None,
+        ls_max_steps = None
+    )
+)]
 fn nls(
     residual: Py<PyAny>,
     jacobian: Py<PyAny>,
-    project: Option<Py<PyAny>>,
     x0: Vec<f64>,
-    lambda_: f64,
-    step_scale: f64,
-    max_iters: usize,
-    tol_r: f64,
-    tol_dx: f64,
-    line_search: bool,
-    ls_beta: f64,
-    ls_max_steps: usize,
+    project: Option<Py<PyAny>>,
+    lambda_: Option<f64>,
+    step_scale: Option<f64>,
+    max_iters: Option<usize>,
+    tol_r: Option<f64>,
+    tol_dx: Option<f64>,
+    line_search: Option<bool>,
+    ls_beta: Option<f64>,
+    ls_max_steps: Option<usize>,
 ) -> PyResult<(Vec<f64>, f64, bool, usize, f64, f64)> {
     let space = EuclideanSpace;
     let solver = NonlinearLeastSquares {
         space,
-        lambda: lambda_,
-        step_scale,
-        max_iters,
-        tol_r,
-        tol_dq: tol_dx, // Rust側フィールド名が tol_dq のままならここに入れる
-        line_search,
-        ls_beta,
-        ls_max_steps,
+        lambda: lambda_.unwrap_or(1e-3),
+        step_scale: step_scale.unwrap_or(1.0),
+        max_iters: max_iters.unwrap_or(100),
+        tol_r: tol_r.unwrap_or(1e-6),
+        tol_dq: tol_dx.unwrap_or(1e-6),
+        line_search: line_search.unwrap_or(true),
+        ls_beta: ls_beta.unwrap_or(0.5),
+        ls_max_steps: ls_max_steps.unwrap_or(20),
     };
 
     let n = x0.len();
@@ -181,7 +205,7 @@ fn nls(
                     ));
                 }
 
-                let slice = unsafe { arr.as_slice()? }; // row-major contiguous 想定
+                let slice = unsafe { arr.as_slice()? }; // row-major contiguous
                 j_out.copy_from_slice(slice);
                 Ok(())
             } else {
