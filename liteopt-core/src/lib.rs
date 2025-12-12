@@ -12,32 +12,55 @@
 /// MVP implements only EuclideanSpace (Vec<f64>), leaving room for
 /// future manifolds such as SO(3) or SE(3).
 pub trait Space {
-    /// Type representing points/vectors on the space.
     type Point: Clone;
 
-    /// Return a zero-like vector with the same shape as x.
     fn zero_like(&self, x: &Self::Point) -> Self::Point;
-
-    /// Vector norm.
     fn norm(&self, v: &Self::Point) -> f64;
 
-    /// Return v scaled by the scalar alpha.
-    fn scale(&self, v: &Self::Point, alpha: f64) -> Self::Point;
+    // --- core ops (allocation-free if impl does it right) ---
+    fn scale_into(&self, out: &mut Self::Point, v: &Self::Point, alpha: f64);
+    fn add_into(&self, out: &mut Self::Point, x: &Self::Point, v: &Self::Point);
+    fn difference_into(&self, out: &mut Self::Point, x: &Self::Point, y: &Self::Point);
 
-    /// Compute x + v (result is a point).
-    fn add(&self, x: &Self::Point, v: &Self::Point) -> Self::Point;
-
-    /// Compute y - x (result is a vector).
-    fn difference(&self, x: &Self::Point, y: &Self::Point) -> Self::Point;
-
-    /// Return the point reached by moving from x along direction by step alpha.
+    /// out = Retr_x(alpha * direction)
     ///
-    /// By default this matches the Euclidean update
-    ///   x_{k+1} = x_k + alpha * direction
-    /// in Euclidean space.
+    /// default: uses a temporary buffer allocated ONCE by caller (see below)
+    fn retract_into(
+        &self,
+        out: &mut Self::Point,
+        x: &Self::Point,
+        direction: &Self::Point,
+        alpha: f64,
+        tmp: &mut Self::Point,
+    ) {
+        // tmp = alpha * direction
+        self.scale_into(tmp, direction, alpha);
+        // out = x + tmp
+        self.add_into(out, x, tmp);
+    }
+    
+
+    // --- convenience wrappers (allocate; OK for examples) ---
+    fn scale(&self, v: &Self::Point, alpha: f64) -> Self::Point {
+        let mut out = self.zero_like(v);
+        self.scale_into(&mut out, v, alpha);
+        out
+    }
+    fn add(&self, x: &Self::Point, v: &Self::Point) -> Self::Point {
+        let mut out = self.zero_like(x);
+        self.add_into(&mut out, x, v);
+        out
+    }
+    fn difference(&self, x: &Self::Point, y: &Self::Point) -> Self::Point {
+        let mut out = self.zero_like(x);
+        self.difference_into(&mut out, x, y);
+        out
+    }
     fn retract(&self, x: &Self::Point, direction: &Self::Point, alpha: f64) -> Self::Point {
-        let step = self.scale(direction, alpha);
-        self.add(x, &step)
+        let mut out = self.zero_like(x);
+        let mut tmp = self.zero_like(direction);
+        self.retract_into(&mut out, x, direction, alpha, &mut tmp);
+        out
     }
 }
 
@@ -48,24 +71,47 @@ pub struct EuclideanSpace;
 impl Space for EuclideanSpace {
     type Point = Vec<f64>;
 
-    fn zero_like(&self, x: &Self::Point) -> Self::Point {
+    fn zero_like(&self, x: &Vec<f64>) -> Vec<f64> {
         vec![0.0; x.len()]
     }
 
-    fn norm(&self, v: &Self::Point) -> f64 {
+    fn norm(&self, v: &Vec<f64>) -> f64 {
         v.iter().map(|vi| vi * vi).sum::<f64>().sqrt()
     }
 
-    fn scale(&self, v: &Self::Point, alpha: f64) -> Self::Point {
-        v.iter().map(|vi| alpha * vi).collect()
+    fn scale_into(&self, out: &mut Vec<f64>, v: &Vec<f64>, alpha: f64) {
+        out.resize(v.len(), 0.0);
+        for i in 0..v.len() {
+            out[i] = alpha * v[i];
+        }
     }
 
-    fn add(&self, x: &Self::Point, v: &Self::Point) -> Self::Point {
-        x.iter().zip(v.iter()).map(|(xi, vi)| xi + vi).collect()
+    fn add_into(&self, out: &mut Vec<f64>, x: &Vec<f64>, v: &Vec<f64>) {
+        out.resize(x.len(), 0.0);
+        for i in 0..x.len() {
+            out[i] = x[i] + v[i];
+        }
     }
 
-    fn difference(&self, x: &Self::Point, y: &Self::Point) -> Self::Point {
-        y.iter().zip(x.iter()).map(|(yi, xi)| yi - xi).collect()
+    fn difference_into(&self, out: &mut Vec<f64>, x: &Vec<f64>, y: &Vec<f64>) {
+        out.resize(x.len(), 0.0);
+        for i in 0..x.len() {
+            out[i] = y[i] - x[i];
+        }
+    }
+
+    fn retract_into(
+        &self,
+        out: &mut Vec<f64>,
+        x: &Vec<f64>,
+        direction: &Vec<f64>,
+        alpha: f64,
+        _tmp: &mut Vec<f64>,
+    ) {
+        out.resize(x.len(), 0.0);
+        for i in 0..x.len() {
+            out[i] = x[i] + alpha * direction[i];
+        }
     }
 }
 
@@ -113,6 +159,11 @@ impl<S: Space> GradientDescent<S> {
     {
         let mut grad = self.space.zero_like(&x);
 
+        // pre-allocate buffers to avoid repeated allocations
+        let mut direction = self.space.zero_like(&x);
+        let mut x_next = self.space.zero_like(&x);
+        let mut tmp = self.space.zero_like(&x); // for retract_into
+
         for k in 0..self.max_iters {
             // Compute gradient.
             obj.gradient(&x, &mut grad);
@@ -120,19 +171,25 @@ impl<S: Space> GradientDescent<S> {
             let grad_norm = self.space.norm(&grad);
             if grad_norm < self.tol_grad {
                 let f = obj.value(&x);
-                return OptimizeResult {
-                    x,
-                    f,
-                    iters: k,
-                    grad_norm,
+                return OptimizeResult { 
+                    x, 
+                    f, 
+                    iters: k, 
+                    grad_norm, 
                     converged: true,
                 };
             }
 
-            // x_{k+1} = Retr_x( - step_size * grad )
+
             // direction = -grad
-            let direction = self.space.scale(&grad, -1.0);
-            x = self.space.retract(&x, &direction, self.step_size);
+            self.space.scale_into(&mut direction, &grad, -1.0);
+
+            // x_next = Retr_x(step_size * direction)
+            self.space
+                .retract_into(&mut x_next, &x, &direction, self.step_size, &mut tmp);
+
+            // x <- x_next
+            std::mem::swap(&mut x, &mut x_next);
         }
 
         let f = obj.value(&x);
@@ -159,6 +216,11 @@ impl<S: Space> GradientDescent<S> {
     {
         let mut grad = self.space.zero_like(&x);
 
+        // pre-allocate buffers to avoid repeated allocations
+        let mut direction = self.space.zero_like(&x);
+        let mut x_next = self.space.zero_like(&x);
+        let mut tmp = self.space.zero_like(&x); // for retract_into
+
         for k in 0..self.max_iters {
             // call the user-provided gradient function
             grad_fn(&x, &mut grad);
@@ -175,8 +237,15 @@ impl<S: Space> GradientDescent<S> {
                 };
             }
 
-            let direction = self.space.scale(&grad, -1.0);
-            x = self.space.retract(&x, &direction, self.step_size);
+            // direction = -grad
+            self.space.scale_into(&mut direction, &grad, -1.0);
+
+            // x_next = Retr_x(step_size * direction)
+            self.space
+                .retract_into(&mut x_next, &x, &direction, self.step_size, &mut tmp);
+
+            // x <- x_next
+            std::mem::swap(&mut x, &mut x_next);
         }
 
         let f = value_fn(&x);
@@ -256,6 +325,9 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
         let mut cost = 0.5 * dot(&r, &r);
         let mut r_norm = norm2(&r);
 
+        let mut x_next = vec![0.0f64; n];
+        let mut tmp = vec![0.0f64; n]; // for retract_into
+
         for it in 0..self.max_iters {
             if r_norm <= self.tol_r {
                 return LeastSquaresResult {
@@ -322,7 +394,7 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
                 let mut accepted = false;
                 for _ in 0..self.ls_max_steps {
                     // q_trial = Retr_q(alpha * dq)
-                    x_trial = self.space.retract(&x, &dx, alpha);
+                    self.space.retract_into(&mut x_trial, &x, &dx, alpha, &mut tmp);
                     project(&mut x_trial);
 
                     residual_fn(&x_trial, &mut r_trial);
@@ -350,8 +422,9 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
                 }
             } else {
                 // x = Retr_x(alpha * dx)
-                x = self.space.retract(&x, &dx, alpha);
-                project(&mut x);
+                self.space.retract_into(&mut x_next, &x, &dx, alpha, &mut tmp);
+                project(&mut x_next);
+                std::mem::swap(&mut x, &mut x_next);
 
                 residual_fn(&x, &mut r);
                 cost = 0.5 * dot(&r, &r);
