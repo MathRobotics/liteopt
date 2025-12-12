@@ -32,16 +32,7 @@ def main():
     x_star, f_star, ok, iters, rnorm, dxnorm = liteopt.nls(
         residual,
         jacobian,
-        None,
-        x0=[0.0, 0.0],
-        lambda_=1e-3,
-        step_scale=1.0,
-        max_iters=200,
-        tol_r=1e-9,
-        tol_dx=1e-12,
-        line_search=True,
-        ls_beta=0.5,
-        ls_max_steps=20,
+        x0=x0
     )
     print("converged:", ok)
     print("x*:", x_star, "f(x*):", f_star)
