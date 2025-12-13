@@ -1,3 +1,4 @@
 [workspace]
 members = ["liteopt-core", "liteopt-py"]
+resolver = "2"
 default-members = ["liteopt-core"]

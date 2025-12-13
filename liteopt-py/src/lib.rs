@@ -81,7 +81,6 @@ fn gd(
 ///
 /// residual: callable(x: list[float]) -> list[float]           (len = m)
 /// jacobian: callable(x: list[float]) -> list[float]           (len = m*n, row-major)
-/// project : Optional[callable(x: list[float]) -> list[float]] (len = n)  or None
 #[pyfunction(
     signature = (
         residual,
@@ -99,6 +98,7 @@ fn gd(
     )
 )]
 fn nls(
+    py: Python<'_>,
     residual: Py<PyAny>,
     jacobian: Py<PyAny>,
     x0: Vec<f64>,
@@ -125,13 +125,13 @@ fn nls(
         ls_max_steps: ls_max_steps.unwrap_or(20),
     };
 
-    let n = x0.len();
+    // Python 側 callable をこの GIL コンテキストに紐付けて clone
+    let residual_obj = residual.clone_ref(py);
+    let project_obj = project.map(|p| p.clone_ref(py));
 
     // ---- infer m by calling residual(x0) once ----
-    let r0: Vec<f64> = Python::with_gil(|py| -> PyResult<Vec<f64>> {
-        let out = residual.bind(py).call1((x0.clone(),))?;
-        out.extract::<Vec<f64>>()
-    })?;
+    let out0 = residual_obj.call1(py, (x0.clone(),))?;
+    let r0: Vec<f64> = out0.extract(py)?;
     let m = r0.len();
     if m == 0 {
         return Err(pyo3::exceptions::PyValueError::new_err(
@@ -142,101 +142,86 @@ fn nls(
     // ---- error propagation from closures ----
     let err_cell: RefCell<Option<PyErr>> = RefCell::new(None);
 
-    // residual_fn(q, r_out)
+    // residual_fn(x, r_out)
     let mut residual_fn = |x: &[f64], r_out: &mut [f64]| {
         if err_cell.borrow().is_some() {
             return;
         }
 
-        let res = Python::with_gil(|py| -> PyResult<()> {
-            let out = residual.bind(py).call1((x.to_vec(),))?;
+        let res: PyResult<()> = (|| {
+            let out = residual.bind(py).call1((x.to_vec(),))?; // <- Bound<'py, PyAny>
 
-            // numpy.ndarray (1D)
-            if let Ok(arr) = out.downcast::<PyArray1<f64>>() {
+            if let Ok(arr) = out.cast::<PyArray1<f64>>() {
                 let slice = unsafe { arr.as_slice()? };
                 if slice.len() != r_out.len() {
-                    return Err(pyo3::exceptions::PyValueError::new_err(
-                        "residual length mismatch",
-                    ));
+                    return Err(pyo3::exceptions::PyValueError::new_err("residual length mismatch"));
                 }
                 r_out.copy_from_slice(slice);
                 Ok(())
             } else {
-                // fallback: list
                 let vec: Vec<f64> = out.extract()?;
                 if vec.len() != r_out.len() {
-                    return Err(pyo3::exceptions::PyValueError::new_err(
-                        "residual length mismatch",
-                    ));
+                    return Err(pyo3::exceptions::PyValueError::new_err("residual length mismatch"));
                 }
                 r_out.copy_from_slice(&vec);
                 Ok(())
             }
-        });
+        })();
 
         if let Err(e) = res {
             *err_cell.borrow_mut() = Some(e);
         }
     };
 
-    // jacobian_fn(q, j_out)  (row-major m*n)
+    // jacobian_fn(x, j_out)  (row-major m*n)
     let mut jacobian_fn = |x: &[f64], j_out: &mut [f64]| {
         if err_cell.borrow().is_some() {
             return;
         }
 
-        let res = Python::with_gil(|py| -> PyResult<()> {
-            let out = jacobian.bind(py).call1((x.to_vec(),))?;
+        let res: PyResult<()> = (|| {
+            let out = jacobian.bind(py).call1((x.to_vec(),))?; // <- Bound<'py, PyAny>
 
-            // numpy.ndarray (2D)
-            if let Ok(arr) = out.downcast::<PyArray2<f64>>() {
+            if let Ok(arr) = out.cast::<PyArray2<f64>>() {
                 let shape = arr.shape();
                 if shape.len() != 2 {
-                    return Err(pyo3::exceptions::PyValueError::new_err(
-                        "jacobian must be 2D ndarray",
-                    ));
+                    return Err(pyo3::exceptions::PyValueError::new_err("jacobian must be 2D ndarray"));
                 }
-
-                let m2 = shape[0];
-                let n2 = shape[1];
+                let (m2, n2) = (shape[0], shape[1]);
                 if m2 * n2 != j_out.len() {
-                    return Err(pyo3::exceptions::PyValueError::new_err(
-                        "jacobian size mismatch",
-                    ));
+                    return Err(pyo3::exceptions::PyValueError::new_err("jacobian size mismatch"));
                 }
 
-                let slice = unsafe { arr.as_slice()? }; // row-major contiguous
+                let slice = unsafe { arr.as_slice()? }; // contiguous 前提
                 j_out.copy_from_slice(slice);
                 Ok(())
             } else {
-                // fallback: flat list
                 let vec: Vec<f64> = out.extract()?;
                 if vec.len() != j_out.len() {
-                    return Err(pyo3::exceptions::PyValueError::new_err(
-                        "jacobian size mismatch",
-                    ));
+                    return Err(pyo3::exceptions::PyValueError::new_err("jacobian size mismatch"));
                 }
                 j_out.copy_from_slice(&vec);
                 Ok(())
             }
-        });
+
+        })();
 
         if let Err(e) = res {
             *err_cell.borrow_mut() = Some(e);
         }
     };
 
-    // project(q): optional
+    // project(x): optional
     let mut project_fn = |x: &mut [f64]| {
         if err_cell.borrow().is_some() {
             return;
         }
-        let Some(p) = &project else { return; };
+        let Some(p) = &project_obj else { return; };
 
-        let res: PyResult<Vec<f64>> = Python::with_gil(|py| {
-            let out = p.bind(py).call1((x.to_vec(),))?;
-            out.extract::<Vec<f64>>()
-        });
+        let res: PyResult<Vec<f64>> = (|| {
+            let out = p.call1(py, (x.to_vec(),))?;
+            out.extract::<Vec<f64>>(py)
+        })();
 
         match res {
             Ok(x_new) => {
@@ -274,6 +259,7 @@ fn nls(
         result.dx_norm,
     ))
 }
+
 
 /// Python module definition
 #[pymodule]
