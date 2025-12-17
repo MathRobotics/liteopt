@@ -1,12 +1,12 @@
+use crate::linalg::{dot, jj_t_plus_lambda, jt_mul_vec, norm2, solve_linear_inplace};
 use crate::space::Space;
-use crate::linalg::{dot, norm2, jj_t_plus_lambda, jt_mul_vec, solve_linear_inplace};
 
 // ----------------- NonlinearLeastSquares ---------------------
 // --------------------------------------
 #[derive(Clone, Debug)]
 pub struct LeastSquaresResult<P> {
     pub x: P,
-    pub cost: f64,        // 0.5 * ||r||^2
+    pub cost: f64, // 0.5 * ||r||^2
     pub iters: usize,
     pub r_norm: f64,
     pub dx_norm: f64,
@@ -16,14 +16,15 @@ pub struct LeastSquaresResult<P> {
 #[derive(Clone, Debug)]
 pub struct NonlinearLeastSquares<S: Space<Point = Vec<f64>>> {
     pub space: S,
-    pub lambda: f64,          // damping
-    pub step_scale: f64,      // alpha in (0,1]
+    pub lambda: f64,     // damping
+    pub step_scale: f64, // alpha in (0,1]
     pub max_iters: usize,
-    pub tol_r: f64,           // stop if ||r|| < tol_r
-    pub tol_dq: f64,          // stop if ||dq|| < tol_dq
-    pub line_search: bool,    // simple backtracking on cost
-    pub ls_beta: f64,         // e.g. 0.5
-    pub ls_max_steps: usize,  // e.g. 20
+    pub tol_r: f64,          // stop if ||r|| < tol_r
+    pub tol_dq: f64,         // stop if ||dq|| < tol_dq
+    pub line_search: bool,   // simple backtracking on cost
+    pub ls_beta: f64,        // e.g. 0.5
+    pub ls_max_steps: usize, // e.g. 20
+    pub verbose: bool,       // print per-iteration diagnostics
 }
 
 impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
@@ -51,8 +52,8 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
         assert!(m > 0 && n > 0);
 
         let mut r = vec![0.0f64; m];
-        let mut j = vec![0.0f64; m * n];  // row-major
-        let mut a = vec![0.0f64; m * m];  // A = J J^T + lambda I
+        let mut j = vec![0.0f64; m * n]; // row-major
+        let mut a = vec![0.0f64; m * m]; // A = J J^T + lambda I
         let mut y = vec![0.0f64; m];
         let mut dx = vec![0.0f64; n];
 
@@ -65,11 +66,24 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
         let mut cost = 0.5 * dot(&r, &r);
         let mut r_norm = norm2(&r);
 
+        if self.verbose {
+            println!(
+                "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | note initial",
+                0, cost, r_norm
+            );
+        }
+
         let mut x_next = vec![0.0f64; n];
         let mut tmp = vec![0.0f64; n]; // for retract_into
 
         for it in 0..self.max_iters {
             if r_norm <= self.tol_r {
+                if self.verbose {
+                    println!(
+                        "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | stop r_norm",
+                        it, cost, r_norm, 0.0
+                    );
+                }
                 return LeastSquaresResult {
                     x,
                     cost,
@@ -90,6 +104,15 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
             y.copy_from_slice(&r);
             let ok = solve_linear_inplace(&mut a, &mut y, m);
             if !ok {
+                if self.verbose {
+                    println!(
+                        "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | note linear_solve_failed",
+                        it,
+                        cost,
+                        r_norm,
+                        f64::NAN
+                    );
+                }
                 return LeastSquaresResult {
                     x,
                     cost,
@@ -108,6 +131,12 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
 
             let dx_norm = norm2(&dx);
             if dx_norm <= self.tol_dq {
+                if self.verbose {
+                    println!(
+                        "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | stop dx_norm",
+                        it, cost, r_norm, dx_norm
+                    );
+                }
                 return LeastSquaresResult {
                     x,
                     cost,
@@ -120,6 +149,12 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
 
             let mut alpha = self.step_scale.clamp(0.0, 1.0);
             if alpha == 0.0 {
+                if self.verbose {
+                    println!(
+                        "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | note step_scale_zero",
+                        it, cost, r_norm, dx_norm
+                    );
+                }
                 return LeastSquaresResult {
                     x,
                     cost,
@@ -132,9 +167,11 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
 
             if self.line_search {
                 let mut accepted = false;
+                let mut used_alpha = alpha;
                 for _ in 0..self.ls_max_steps {
                     // q_trial = Retr_q(alpha * dq)
-                    self.space.retract_into(&mut x_trial, &x, &dx, alpha, &mut tmp);
+                    self.space
+                        .retract_into(&mut x_trial, &x, &dx, alpha, &mut tmp);
                     project(&mut x_trial);
 
                     residual_fn(&x_trial, &mut r_trial);
@@ -146,9 +183,23 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
                         cost = cost_trial;
                         r_norm = norm2(&r);
                         accepted = true;
+                        used_alpha = alpha;
                         break;
                     }
                     alpha *= self.ls_beta;
+                }
+                if self.verbose {
+                    if accepted {
+                        println!(
+                            "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | alpha {:>8.3e} | note accepted",
+                            it, cost, r_norm, dx_norm, used_alpha
+                        );
+                    } else {
+                        println!(
+                            "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | alpha {:>8.3e} | note rejected",
+                            it, cost, r_norm, dx_norm, alpha
+                        );
+                    }
                 }
                 if !accepted {
                     return LeastSquaresResult {
@@ -162,13 +213,21 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
                 }
             } else {
                 // x = Retr_x(alpha * dx)
-                self.space.retract_into(&mut x_next, &x, &dx, alpha, &mut tmp);
+                self.space
+                    .retract_into(&mut x_next, &x, &dx, alpha, &mut tmp);
                 project(&mut x_next);
                 std::mem::swap(&mut x, &mut x_next);
 
                 residual_fn(&x, &mut r);
                 cost = 0.5 * dot(&r, &r);
                 r_norm = norm2(&r);
+
+                if self.verbose {
+                    println!(
+                        "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | alpha {:>8.3e} | note full_step",
+                        it, cost, r_norm, dx_norm, alpha
+                    );
+                }
             }
         }
 

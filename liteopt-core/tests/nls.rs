@@ -1,7 +1,4 @@
-use liteopt::{
-    space::EuclideanSpace,
-    nls::NonlinearLeastSquares,
-};
+use liteopt::{nls::NonlinearLeastSquares, space::EuclideanSpace};
 
 #[test]
 fn nonlinear_least_squares_planar_2link() {
@@ -16,6 +13,7 @@ fn nonlinear_least_squares_planar_2link() {
         line_search: true,
         ls_beta: 0.5,
         ls_max_steps: 20,
+        verbose: false,
     };
 
     // 2-link planar arm
@@ -43,8 +41,8 @@ fn nonlinear_least_squares_planar_2link() {
 
         j[0 * 2 + 0] = -l1 * s1 - l2 * s12;
         j[0 * 2 + 1] = -l2 * s12;
-        j[1 * 2 + 0] =  l1 * c1 + l2 * c12;
-        j[1 * 2 + 1] =  l2 * c12;
+        j[1 * 2 + 0] = l1 * c1 + l2 * c12;
+        j[1 * 2 + 1] = l2 * c12;
     };
 
     let project = |_q: &mut [f64]| {};

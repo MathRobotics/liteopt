@@ -1,8 +1,5 @@
 use liteopt::{
-    space::EuclideanSpace,
-    gd::GradientDescent,
-    objective::Quadratic,
-    objective::Rosenbrock,
+    gd::GradientDescent, objective::Quadratic, objective::Rosenbrock, space::EuclideanSpace,
 };
 
 #[test]
@@ -16,6 +13,7 @@ fn quadratic_minimization() {
         step_size: 0.1,
         max_iters: 1000,
         tol_grad: 1e-6,
+        verbose: false,
     };
 
     let x0 = vec![0.0];
@@ -34,6 +32,7 @@ fn rosenbrock_minimization() {
         step_size: 1e-3,
         max_iters: 200_000,
         tol_grad: 1e-4,
+        verbose: false,
     };
 
     let x0 = vec![-1.2, 1.0];
@@ -52,14 +51,15 @@ fn nonlinear_minimization_with_fn() {
         step_size: 1e-3,
         max_iters: 200_000,
         tol_grad: 1e-4,
+        verbose: false,
     };
 
     // initial point
     let x0 = vec![0.0, 0.0];
 
-    // objective function 
+    // objective function
     // p = [ cos(x) + cos(x+y)
-    //       sin(x) + sin(x+y)] 
+    //       sin(x) + sin(x+y)]
     let p_fn = |x: &Vec<f64>| {
         let p = vec![
             f64::cos(x[0]) + f64::cos(x[0] + x[1]),
@@ -82,7 +82,6 @@ fn nonlinear_minimization_with_fn() {
     };
     let target = vec![0.5, (f64::sqrt(3.0) + 2.0) / 2.0];
     use std::f64::consts::PI;
-
 
     let value_fn = |x: &Vec<f64>| {
         let x0_target = target[0];
@@ -107,6 +106,6 @@ fn nonlinear_minimization_with_fn() {
     let result = solver.minimize_with_fn(x0, value_fn, grad_fn);
 
     // True minimizer is (pi/3, pi/6)
-    assert!((result.x[0] - PI/3.0).abs() < 1e-3);
-    assert!((result.x[1] - PI/6.0).abs() < 1e-3);
+    assert!((result.x[0] - PI / 3.0).abs() < 1e-3);
+    assert!((result.x[1] - PI / 6.0).abs() < 1e-3);
 }

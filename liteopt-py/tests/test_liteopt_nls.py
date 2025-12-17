@@ -32,7 +32,8 @@ def main():
     x_star, f_star, ok, iters, rnorm, dxnorm = liteopt.nls(
         residual,
         jacobian,
-        x0=x0
+        x0=x0,
+        verbose=True,
     )
     print("converged:", ok)
     print("x*:", x_star, "f(x*):", f_star)

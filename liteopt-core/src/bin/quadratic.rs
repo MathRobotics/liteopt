@@ -1,4 +1,4 @@
-use liteopt::{space::EuclideanSpace, gd::GradientDescent};
+use liteopt::{gd::GradientDescent, space::EuclideanSpace};
 
 fn main() {
     let space = EuclideanSpace;
@@ -8,6 +8,7 @@ fn main() {
         step_size: 1e-3,
         max_iters: 200_000,
         tol_grad: 1e-4,
+        verbose: true,
     };
 
     // initial point
