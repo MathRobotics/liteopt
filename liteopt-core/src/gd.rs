@@ -1,5 +1,5 @@
-use crate::space::Space;
 use crate::objective::Objective;
+use crate::space::Space;
 
 /// Configuration for gradient descent.
 #[derive(Clone, Debug)]
@@ -12,6 +12,8 @@ pub struct GradientDescent<S: Space> {
     pub max_iters: usize,
     /// Considered converged when the gradient norm falls below this threshold.
     pub tol_grad: f64,
+    /// If true, prints per-iteration diagnostics (f, \|grad\|, step size).
+    pub verbose: bool,
 }
 
 /// Struct that holds the optimization result.
@@ -41,17 +43,28 @@ impl<S: Space> GradientDescent<S> {
             obj.gradient(&x, &mut grad);
 
             let grad_norm = self.space.norm(&grad);
+            let f_current = self.verbose.then(|| obj.value(&x));
+            if let Some(f) = f_current {
+                println!(
+                    "[gd] iter {k}: f = {f:.6e}, grad_norm = {grad_norm:.6e}, step_size = {:+.3e}",
+                    self.step_size
+                );
+            }
             if grad_norm < self.tol_grad {
-                let f = obj.value(&x);
-                return OptimizeResult { 
-                    x, 
-                    f, 
-                    iters: k, 
-                    grad_norm, 
+                let f = f_current.unwrap_or_else(|| obj.value(&x));
+                if self.verbose {
+                    println!(
+                        "[gd] iter {k}: converged with f = {f:.6e}, grad_norm = {grad_norm:.6e}",
+                    );
+                }
+                return OptimizeResult {
+                    x,
+                    f,
+                    iters: k,
+                    grad_norm,
                     converged: true,
                 };
             }
-
 
             // direction = -grad
             self.space.scale_into(&mut direction, &grad, -1.0);
@@ -98,8 +111,20 @@ impl<S: Space> GradientDescent<S> {
             grad_fn(&x, &mut grad);
 
             let grad_norm = self.space.norm(&grad);
+            let f_current = self.verbose.then(|| value_fn(&x));
+            if let Some(f) = f_current {
+                println!(
+                    "[gd] iter {k}: f = {f:.6e}, grad_norm = {grad_norm:.6e}, step_size = {:+.3e}",
+                    self.step_size
+                );
+            }
             if grad_norm < self.tol_grad {
-                let f = value_fn(&x);
+                let f = f_current.unwrap_or_else(|| value_fn(&x));
+                if self.verbose {
+                    println!(
+                        "[gd] iter {k}: converged with f = {f:.6e}, grad_norm = {grad_norm:.6e}",
+                    );
+                }
                 return OptimizeResult {
                     x,
                     f,

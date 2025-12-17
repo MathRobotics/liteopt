@@ -1,9 +1,9 @@
-use liteopt_core::{space::EuclideanSpace, gd::GradientDescent, nls::NonlinearLeastSquares};
+use liteopt_core::{gd::GradientDescent, nls::NonlinearLeastSquares, space::EuclideanSpace};
 use pyo3::prelude::*;
 use std::cell::RefCell;
 
 use numpy::{PyArray1, PyArray2};
-use numpy::{PyArrayMethods, PyUntypedArrayMethods}; 
+use numpy::{PyArrayMethods, PyUntypedArrayMethods};
 
 /// Gradient Descent optimizer exposed to Python.
 ///
@@ -16,7 +16,8 @@ use numpy::{PyArrayMethods, PyUntypedArrayMethods};
         x0,
         step_size = None,
         max_iters = None,
-        tol_grad = None
+        tol_grad = None,
+        verbose = None
     )
 )]
 fn gd(
@@ -27,6 +28,7 @@ fn gd(
     step_size: Option<f64>,
     max_iters: Option<usize>,
     tol_grad: Option<f64>,
+    verbose: Option<bool>,
 ) -> PyResult<(Vec<f64>, f64, bool)> {
     let space = EuclideanSpace;
     let solver = GradientDescent {
@@ -34,6 +36,7 @@ fn gd(
         step_size: step_size.unwrap_or(1e-3),
         max_iters: max_iters.unwrap_or(100),
         tol_grad: tol_grad.unwrap_or(1e-6),
+        verbose: verbose.unwrap_or(false),
     };
 
     let f_obj = f.clone_ref(py);
@@ -94,7 +97,8 @@ fn gd(
         tol_dx = None,
         line_search = None,
         ls_beta = None,
-        ls_max_steps = None
+        ls_max_steps = None,
+        verbose = None
     )
 )]
 fn nls(
@@ -111,6 +115,7 @@ fn nls(
     line_search: Option<bool>,
     ls_beta: Option<f64>,
     ls_max_steps: Option<usize>,
+    verbose: Option<bool>,
 ) -> PyResult<(Vec<f64>, f64, bool, usize, f64, f64)> {
     let space = EuclideanSpace;
     let solver = NonlinearLeastSquares {
@@ -123,6 +128,7 @@ fn nls(
         line_search: line_search.unwrap_or(true),
         ls_beta: ls_beta.unwrap_or(0.5),
         ls_max_steps: ls_max_steps.unwrap_or(20),
+        verbose: verbose.unwrap_or(false),
     };
 
     // Python 側 callable をこの GIL コンテキストに紐付けて clone
@@ -154,14 +160,18 @@ fn nls(
             if let Ok(arr) = out.cast::<PyArray1<f64>>() {
                 let slice = unsafe { arr.as_slice()? };
                 if slice.len() != r_out.len() {
-                    return Err(pyo3::exceptions::PyValueError::new_err("residual length mismatch"));
+                    return Err(pyo3::exceptions::PyValueError::new_err(
+                        "residual length mismatch",
+                    ));
                 }
                 r_out.copy_from_slice(slice);
                 Ok(())
             } else {
                 let vec: Vec<f64> = out.extract()?;
                 if vec.len() != r_out.len() {
-                    return Err(pyo3::exceptions::PyValueError::new_err("residual length mismatch"));
+                    return Err(pyo3::exceptions::PyValueError::new_err(
+                        "residual length mismatch",
+                    ));
                 }
                 r_out.copy_from_slice(&vec);
                 Ok(())
@@ -185,11 +195,15 @@ fn nls(
             if let Ok(arr) = out.cast::<PyArray2<f64>>() {
                 let shape = arr.shape();
                 if shape.len() != 2 {
-                    return Err(pyo3::exceptions::PyValueError::new_err("jacobian must be 2D ndarray"));
+                    return Err(pyo3::exceptions::PyValueError::new_err(
+                        "jacobian must be 2D ndarray",
+                    ));
                 }
                 let (m2, n2) = (shape[0], shape[1]);
                 if m2 * n2 != j_out.len() {
-                    return Err(pyo3::exceptions::PyValueError::new_err("jacobian size mismatch"));
+                    return Err(pyo3::exceptions::PyValueError::new_err(
+                        "jacobian size mismatch",
+                    ));
                 }
 
                 let slice = unsafe { arr.as_slice()? }; // contiguous 前提
@@ -198,12 +212,13 @@ fn nls(
             } else {
                 let vec: Vec<f64> = out.extract()?;
                 if vec.len() != j_out.len() {
-                    return Err(pyo3::exceptions::PyValueError::new_err("jacobian size mismatch"));
+                    return Err(pyo3::exceptions::PyValueError::new_err(
+                        "jacobian size mismatch",
+                    ));
                 }
                 j_out.copy_from_slice(&vec);
                 Ok(())
             }
-
         })();
 
         if let Err(e) = res {
@@ -216,7 +231,9 @@ fn nls(
         if err_cell.borrow().is_some() {
             return;
         }
-        let Some(p) = &project_obj else { return; };
+        let Some(p) = &project_obj else {
+            return;
+        };
 
         let res: PyResult<Vec<f64>> = (|| {
             let out = p.call1(py, (x.to_vec(),))?;
@@ -226,13 +243,12 @@ fn nls(
         match res {
             Ok(x_new) => {
                 if x_new.len() != x.len() {
-                    *err_cell.borrow_mut() = Some(pyo3::exceptions::PyValueError::new_err(
-                        format!(
+                    *err_cell.borrow_mut() =
+                        Some(pyo3::exceptions::PyValueError::new_err(format!(
                             "project length mismatch: expected {}, got {}",
                             x.len(),
                             x_new.len()
-                        ),
-                    ));
+                        )));
                     return;
                 }
                 x.copy_from_slice(&x_new);
@@ -259,7 +275,6 @@ fn nls(
         result.dx_norm,
     ))
 }
-
 
 /// Python module definition
 #[pymodule]
