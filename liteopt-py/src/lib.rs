@@ -98,6 +98,7 @@ fn gd(
         line_search = None,
         ls_beta = None,
         ls_max_steps = None,
+        c_armijo = None,
         verbose = None
     )
 )]
@@ -115,8 +116,9 @@ fn nls(
     line_search: Option<bool>,
     ls_beta: Option<f64>,
     ls_max_steps: Option<usize>,
+    c_armijo: Option<f64>,
     verbose: Option<bool>,
-) -> PyResult<(Vec<f64>, f64, bool, usize, f64, f64)> {
+) -> PyResult<(Vec<f64>, f64, usize, f64, f64, bool)> {
     let space = EuclideanSpace;
     let solver = NonlinearLeastSquares {
         space,
@@ -128,6 +130,7 @@ fn nls(
         line_search: line_search.unwrap_or(true),
         ls_beta: ls_beta.unwrap_or(0.5),
         ls_max_steps: ls_max_steps.unwrap_or(20),
+        c_armijo: c_armijo.unwrap_or(1e-4),
         verbose: verbose.unwrap_or(false),
     };
 
@@ -269,10 +272,10 @@ fn nls(
     Ok((
         result.x,
         result.cost,
-        result.converged,
         result.iters,
         result.r_norm,
         result.dx_norm,
+        result.converged,
     ))
 }
 
