@@ -13,6 +13,7 @@ fn nonlinear_least_squares_planar_2link() {
         line_search: true,
         ls_beta: 0.5,
         ls_max_steps: 20,
+        c_armijo: 1e-4,
         verbose: false,
     };
 

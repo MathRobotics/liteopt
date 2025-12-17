@@ -21,9 +21,10 @@ pub struct NonlinearLeastSquares<S: Space<Point = Vec<f64>>> {
     pub max_iters: usize,
     pub tol_r: f64,          // stop if ||r|| < tol_r
     pub tol_dq: f64,         // stop if ||dq|| < tol_dq
-    pub line_search: bool,   // simple backtracking on cost
+    pub line_search: bool,   // backtracking line search
     pub ls_beta: f64,        // e.g. 0.5
     pub ls_max_steps: usize, // e.g. 20
+    pub c_armijo: f64,       // Armijo condition constant (e.g. 1e-4)
     pub verbose: bool,       // print per-iteration diagnostics
 }
 
@@ -31,10 +32,10 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
     /// Solve the nonlinear least squares problem.
     ///
     /// - m: residual dimension (e.g. 2 for 2D position, 3 for 3D position, 6 for SE(3) pose error)
-    /// - q0: initial guess (len = n)
-    /// - residual_fn(q, r): fill r (len = m)
-    /// - jacobian_fn(q, J): fill J (len = m*n), row-major (i-th row, k-th col => J[i*n+k])
-    /// - project(q): optional projection (joint limits etc). If not needed, pass |q| {}
+    /// - x: initial guess (len = n)
+    /// - residual_fn(x, r): fill r (len = m)
+    /// - jacobian_fn(x, J): fill J (len = m*n), row-major (i-th row, k-th col => J[i*n+k])
+    /// - project(x): optional projection (joint limits etc). If not needed, pass |x| {}
     pub fn solve_with_fn<R, JF, P>(
         &self,
         m: usize,
@@ -57,6 +58,9 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
         let mut y = vec![0.0f64; m];
         let mut dx = vec![0.0f64; n];
 
+        // Only needed for Armijo / fallback, but allocated once.
+        let mut g = vec![0.0f64; n]; // g = J^T r (gradient of 0.5||r||^2)
+
         // for line search
         let mut x_trial = vec![0.0f64; n];
         let mut r_trial = vec![0.0f64; m];
@@ -77,6 +81,7 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
         let mut tmp = vec![0.0f64; n]; // for retract_into
 
         for it in 0..self.max_iters {
+            // Stop by residual norm
             if r_norm <= self.tol_r {
                 if self.verbose {
                     println!(
@@ -94,7 +99,7 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
                 };
             }
 
-            // J(q)
+            // J(x)
             jacobian_fn(&x, &mut j);
 
             // A = J J^T + lambda I
@@ -107,10 +112,7 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
                 if self.verbose {
                     println!(
                         "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | note linear_solve_failed",
-                        it,
-                        cost,
-                        r_norm,
-                        f64::NAN
+                        it, cost, r_norm, f64::NAN
                     );
                 }
                 return LeastSquaresResult {
@@ -129,7 +131,36 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
                 *v = -*v;
             }
 
-            let dx_norm = norm2(&dx);
+            // dx norm (may be updated if we fallback)
+            let mut dx_norm = norm2(&dx);
+
+            // If line search is enabled, compute Armijo directional derivative.
+            // If dx is not a descent direction, fallback to steepest descent: dx = -g.
+            let mut dphi0 = f64::NAN;
+            if self.line_search {
+                // g = J^T r  (gradient of 0.5||r||^2)
+                jt_mul_vec(&j, m, n, &r, &mut g);
+
+                dphi0 = dot(&g, &dx);
+
+                // Fallback if not descent (or NaN/Inf): dx = -g
+                if !dphi0.is_finite() || dphi0 >= 0.0 {
+                    for i in 0..n {
+                        dx[i] = -g[i];
+                    }
+                    dx_norm = norm2(&dx);
+                    dphi0 = dot(&g, &dx); // now should be <= 0
+
+                    if self.verbose {
+                        println!(
+                            "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | note fallback_to_steepest_descent dphi0={:>13.6e}",
+                            it, cost, r_norm, dphi0
+                        );
+                    }
+                }
+            }
+
+            // Stop by step norm (after possible fallback)
             if dx_norm <= self.tol_dq {
                 if self.verbose {
                     println!(
@@ -147,6 +178,7 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
                 };
             }
 
+            // step scale alpha
             let mut alpha = self.step_scale.clamp(0.0, 1.0);
             if alpha == 0.0 {
                 if self.verbose {
@@ -168,8 +200,9 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
             if self.line_search {
                 let mut accepted = false;
                 let mut used_alpha = alpha;
+
                 for _ in 0..self.ls_max_steps {
-                    // q_trial = Retr_q(alpha * dq)
+                    // x_trial = Retr_x(alpha * dx)
                     self.space
                         .retract_into(&mut x_trial, &x, &dx, alpha, &mut tmp);
                     project(&mut x_trial);
@@ -177,7 +210,10 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
                     residual_fn(&x_trial, &mut r_trial);
                     let cost_trial = 0.5 * dot(&r_trial, &r_trial);
 
-                    if cost_trial.is_finite() && cost_trial <= cost {
+                    // Armijo: cost(x + αdx) <= cost(x) + c * α * dphi0
+                    let rhs = cost + self.c_armijo * alpha * dphi0;
+
+                    if cost_trial.is_finite() && rhs.is_finite() && cost_trial <= rhs {
                         x.copy_from_slice(&x_trial);
                         r.copy_from_slice(&r_trial);
                         cost = cost_trial;
@@ -186,8 +222,10 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
                         used_alpha = alpha;
                         break;
                     }
+
                     alpha *= self.ls_beta;
                 }
+
                 if self.verbose {
                     if accepted {
                         println!(
@@ -201,6 +239,7 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
                         );
                     }
                 }
+
                 if !accepted {
                     return LeastSquaresResult {
                         x,

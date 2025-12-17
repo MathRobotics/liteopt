@@ -13,6 +13,7 @@ fn main() {
         line_search: true,
         ls_beta: 0.5,
         ls_max_steps: 20,
+        c_armijo: 1e-4,
         verbose: true,
     };
 
