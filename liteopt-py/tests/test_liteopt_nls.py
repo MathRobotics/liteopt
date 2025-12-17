@@ -29,7 +29,7 @@ def jacobian(x):
 
 def main():
     x0 = [-1.2, 1.0]
-    x_star, f_star, ok, iters, rnorm, dxnorm = liteopt.nls(
+    x_star, f_star, iters, rnorm, dxnorm, ok = liteopt.nls(
         residual,
         jacobian,
         x0=x0,
