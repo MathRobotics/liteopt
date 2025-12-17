@@ -4,6 +4,8 @@ use std::cell::RefCell;
 
 use numpy::{PyArray1, PyArray2};
 use numpy::{PyArrayMethods, PyUntypedArrayMethods};
+use numpy::IntoPyArray;
+
 
 /// Gradient Descent optimizer exposed to Python.
 ///
@@ -161,7 +163,14 @@ fn nls(
             let out = residual.bind(py).call1((x.to_vec(),))?; // <- Bound<'py, PyAny>
 
             if let Ok(arr) = out.cast::<PyArray1<f64>>() {
-                let slice = unsafe { arr.as_slice()? };
+                let owned;
+                let arr_c = if arr.is_contiguous() {
+                    arr
+                } else {
+                    owned = arr.to_owned_array().into_pyarray(py);
+                    &owned
+                };
+                let slice = unsafe { arr_c.as_slice()? };
                 if slice.len() != r_out.len() {
                     return Err(pyo3::exceptions::PyValueError::new_err(
                         "residual length mismatch",
@@ -209,7 +218,15 @@ fn nls(
                     ));
                 }
 
-                let slice = unsafe { arr.as_slice()? }; // contiguous 前提
+                let owned;
+                let arr_c = if arr.is_contiguous() {
+                    arr
+                } else {
+                    owned = arr.to_owned_array().into_pyarray(py);
+                    &owned
+                };
+
+                let slice = unsafe { arr_c.as_slice()? }; // contiguous 前提
                 j_out.copy_from_slice(slice);
                 Ok(())
             } else {
