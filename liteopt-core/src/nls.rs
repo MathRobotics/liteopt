@@ -24,6 +24,7 @@ pub struct NonlinearLeastSquares<S: Space<Point = Vec<f64>>> {
     pub line_search: bool,   // simple backtracking on cost
     pub ls_beta: f64,        // e.g. 0.5
     pub ls_max_steps: usize, // e.g. 20
+    pub c_armijo: f64,     // Armijo condition constant
     pub verbose: bool,       // print per-iteration diagnostics
 }
 
@@ -56,6 +57,7 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
         let mut a = vec![0.0f64; m * m]; // A = J J^T + lambda I
         let mut y = vec![0.0f64; m];
         let mut dx = vec![0.0f64; n];
+        let mut g = vec![0.0f64; n]; // g = J^T r (gradient of 0.5||r||^2)
 
         // for line search
         let mut x_trial = vec![0.0f64; n];
@@ -129,6 +131,10 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
                 *v = -*v;
             }
 
+            // g = J^T r  (gradient of 0.5||r||^2)
+            jt_mul_vec(&j, m, n, &r, &mut g);
+            let dphi0 = dot(&g, &dx); // directional derivative along dx
+
             let dx_norm = norm2(&dx);
             if dx_norm <= self.tol_dq {
                 if self.verbose {
@@ -166,6 +172,22 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
             }
 
             if self.line_search {
+                if !dphi0.is_finite() || dphi0 >= 0.0 {
+                    if self.verbose {
+                        println!(
+                            "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | note non_descent_direction dphi0={:>13.6e}",
+                            it, cost, r_norm, dx_norm, dphi0
+                        );
+                    }
+                    return LeastSquaresResult {
+                        x,
+                        cost,
+                        iters: it + 1,
+                        r_norm,
+                        dx_norm,
+                        converged: false,
+                    };
+                }
                 let mut accepted = false;
                 let mut used_alpha = alpha;
                 for _ in 0..self.ls_max_steps {
@@ -177,7 +199,9 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
                     residual_fn(&x_trial, &mut r_trial);
                     let cost_trial = 0.5 * dot(&r_trial, &r_trial);
 
-                    if cost_trial.is_finite() && cost_trial <= cost {
+                    let rhs = cost + self.c_armijo * alpha * dphi0;
+
+                    if cost_trial.is_finite() && rhs.is_finite() && cost_trial <= rhs {
                         x.copy_from_slice(&x_trial);
                         r.copy_from_slice(&r_trial);
                         cost = cost_trial;
