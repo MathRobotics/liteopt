@@ -74,6 +74,14 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
         let mut r_norm = norm2(&r);
 
         if self.verbose {
+            println!("[nls] debug columns:");
+            println!("  iter   : iteration index (0-based)");
+            println!("  cost   : 0.5 * ||r(x)||^2");
+            println!("  r      : ||r(x)|| (residual norm)");
+            println!("  dx     : ||dx|| (step direction norm; after fallback if applied)");
+            println!("  alpha  : step size used in retract (after backtracking)");
+            println!("  lambda : LM damping (bigger => more conservative step)");
+            println!("  note   : state tag (initial/accepted/rejected/full_step/...)");
             println!(
                 "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | note initial",
                 0, cost, r_norm
