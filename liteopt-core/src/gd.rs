@@ -46,15 +46,16 @@ impl<S: Space> GradientDescent<S> {
             let f_current = self.verbose.then(|| obj.value(&x));
             if let Some(f) = f_current {
                 println!(
-                    "[gd] iter {k}: f = {f:.6e}, grad_norm = {grad_norm:.6e}, step_size = {:+.3e}",
-                    self.step_size
+                    "[gd] iter {:>6} | f {:>13.6e} | grad {:>13.6e} | step {:>+9.3e}",
+                    k, f, grad_norm, self.step_size
                 );
             }
             if grad_norm < self.tol_grad {
                 let f = f_current.unwrap_or_else(|| obj.value(&x));
                 if self.verbose {
                     println!(
-                        "[gd] iter {k}: converged with f = {f:.6e}, grad_norm = {grad_norm:.6e}",
+                        "[gd] iter {:>6} | converged | f {:>13.6e} | grad {:>13.6e}",
+                        k, f, grad_norm
                     );
                 }
                 return OptimizeResult {
@@ -114,15 +115,16 @@ impl<S: Space> GradientDescent<S> {
             let f_current = self.verbose.then(|| value_fn(&x));
             if let Some(f) = f_current {
                 println!(
-                    "[gd] iter {k}: f = {f:.6e}, grad_norm = {grad_norm:.6e}, step_size = {:+.3e}",
-                    self.step_size
+                    "[gd] iter {:>6} | f {:>13.6e} | grad {:>13.6e} | step {:>+9.3e}",
+                    k, f, grad_norm, self.step_size
                 );
             }
             if grad_norm < self.tol_grad {
                 let f = f_current.unwrap_or_else(|| value_fn(&x));
                 if self.verbose {
                     println!(
-                        "[gd] iter {k}: converged with f = {f:.6e}, grad_norm = {grad_norm:.6e}",
+                        "[gd] iter {:>6} | converged | f {:>13.6e} | grad {:>13.6e}",
+                        k, f, grad_norm
                     );
                 }
                 return OptimizeResult {

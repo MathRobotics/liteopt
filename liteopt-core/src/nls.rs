@@ -67,7 +67,10 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
         let mut r_norm = norm2(&r);
 
         if self.verbose {
-            println!("[nls] iter 0: cost = {cost:.6e}, r_norm = {r_norm:.6e} (initial)",);
+            println!(
+                "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | note initial",
+                0, cost, r_norm
+            );
         }
 
         let mut x_next = vec![0.0f64; n];
@@ -77,7 +80,8 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
             if r_norm <= self.tol_r {
                 if self.verbose {
                     println!(
-                        "[nls] iter {it}: converged with r_norm = {r_norm:.6e} <= tol_r, cost = {cost:.6e}",
+                        "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | stop r_norm",
+                        it, cost, r_norm, 0.0
                     );
                 }
                 return LeastSquaresResult {
@@ -101,7 +105,13 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
             let ok = solve_linear_inplace(&mut a, &mut y, m);
             if !ok {
                 if self.verbose {
-                    println!("[nls] iter {it}: linear solve failed; exiting");
+                    println!(
+                        "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | note linear_solve_failed",
+                        it,
+                        cost,
+                        r_norm,
+                        f64::NAN
+                    );
                 }
                 return LeastSquaresResult {
                     x,
@@ -123,7 +133,8 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
             if dx_norm <= self.tol_dq {
                 if self.verbose {
                     println!(
-                        "[nls] iter {it}: converged with dx_norm = {dx_norm:.6e} <= tol_dq, cost = {cost:.6e}, r_norm = {r_norm:.6e}",
+                        "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | stop dx_norm",
+                        it, cost, r_norm, dx_norm
                     );
                 }
                 return LeastSquaresResult {
@@ -139,7 +150,10 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
             let mut alpha = self.step_scale.clamp(0.0, 1.0);
             if alpha == 0.0 {
                 if self.verbose {
-                    println!("[nls] iter {it}: step_scale clamped to zero; exiting");
+                    println!(
+                        "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | note step_scale_zero",
+                        it, cost, r_norm, dx_norm
+                    );
                 }
                 return LeastSquaresResult {
                     x,
@@ -177,11 +191,13 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
                 if self.verbose {
                     if accepted {
                         println!(
-                            "[nls] iter {it}: accepted step with alpha = {used_alpha:.3e}, dx_norm = {dx_norm:.6e}, cost = {cost:.6e}, r_norm = {r_norm:.6e}",
+                            "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | alpha {:>8.3e} | note accepted",
+                            it, cost, r_norm, dx_norm, used_alpha
                         );
                     } else {
                         println!(
-                            "[nls] iter {it}: rejected step after line search, dx_norm = {dx_norm:.6e}, cost = {cost:.6e}, r_norm = {r_norm:.6e}",
+                            "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | alpha {:>8.3e} | note rejected",
+                            it, cost, r_norm, dx_norm, alpha
                         );
                     }
                 }
@@ -208,7 +224,8 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
 
                 if self.verbose {
                     println!(
-                        "[nls] iter {it}: took full step with alpha = {alpha:.3e}, dx_norm = {dx_norm:.6e}, cost = {cost:.6e}, r_norm = {r_norm:.6e}",
+                        "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | alpha {:>8.3e} | note full_step",
+                        it, cost, r_norm, dx_norm, alpha
                     );
                 }
             }
