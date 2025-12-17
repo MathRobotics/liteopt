@@ -16,7 +16,7 @@ pub struct LeastSquaresResult<P> {
 #[derive(Clone, Debug)]
 pub struct NonlinearLeastSquares<S: Space<Point = Vec<f64>>> {
     pub space: S,
-    pub lambda: f64,     // damping
+    pub lambda: f64,     // damping (initial)
     pub step_scale: f64, // alpha in (0,1]
     pub max_iters: usize,
     pub tol_r: f64,          // stop if ||r|| < tol_r
@@ -52,6 +52,9 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
         let n = x.len();
         assert!(m > 0 && n > 0);
 
+        // LM damping is mutable locally (self is immutable)
+        let mut lambda = self.lambda;
+
         let mut r = vec![0.0f64; m];
         let mut j = vec![0.0f64; m * n]; // row-major
         let mut a = vec![0.0f64; m * m]; // A = J J^T + lambda I
@@ -80,7 +83,8 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
         let mut x_next = vec![0.0f64; n];
         let mut tmp = vec![0.0f64; n]; // for retract_into
 
-        for it in 0..self.max_iters {
+        let mut it: usize = 0;
+        while it < self.max_iters {
             // Stop by residual norm
             if r_norm <= self.tol_r {
                 if self.verbose {
@@ -103,26 +107,21 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
             jacobian_fn(&x, &mut j);
 
             // A = J J^T + lambda I
-            jj_t_plus_lambda(&j, m, n, self.lambda, &mut a);
+            jj_t_plus_lambda(&j, m, n, lambda, &mut a);
 
             // y = A^{-1} r
             y.copy_from_slice(&r);
             let ok = solve_linear_inplace(&mut a, &mut y, m);
             if !ok {
+                // LM-style recovery: increase lambda and retry SAME iteration
+                lambda *= 10.0;
                 if self.verbose {
                     println!(
-                        "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | note linear_solve_failed",
-                        it, cost, r_norm, f64::NAN
+                        "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | note linear_solve_failed -> increase lambda {:>9.3e}",
+                        it, cost, r_norm, lambda
                     );
                 }
-                return LeastSquaresResult {
-                    x,
-                    cost,
-                    iters: it,
-                    r_norm,
-                    dx_norm: f64::NAN,
-                    converged: false,
-                };
+                continue;
             }
 
             // dx = - J^T y
@@ -229,26 +228,27 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
                 if self.verbose {
                     if accepted {
                         println!(
-                            "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | alpha {:>8.3e} | note accepted",
-                            it, cost, r_norm, dx_norm, used_alpha
+                            "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | alpha {:>8.3e} | lambda {:>9.3e} | note accepted",
+                            it, cost, r_norm, dx_norm, used_alpha, lambda
                         );
                     } else {
                         println!(
-                            "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | alpha {:>8.3e} | note rejected",
-                            it, cost, r_norm, dx_norm, alpha
+                            "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | alpha {:>8.3e} | lambda {:>9.3e} | note rejected",
+                            it, cost, r_norm, dx_norm, alpha, lambda
                         );
                     }
                 }
 
                 if !accepted {
-                    return LeastSquaresResult {
-                        x,
-                        cost,
-                        iters: it + 1,
-                        r_norm,
-                        dx_norm,
-                        converged: false,
-                    };
+                    // LM-style recovery: increase lambda and retry SAME iteration
+                    lambda *= 10.0;
+                    if self.verbose {
+                        println!(
+                            "[nls] iter {:>6} | note rejected -> increase lambda {:>9.3e} and retry",
+                            it, lambda
+                        );
+                    }
+                    continue;
                 }
             } else {
                 // x = Retr_x(alpha * dx)
@@ -263,11 +263,17 @@ impl<S: Space<Point = Vec<f64>>> NonlinearLeastSquares<S> {
 
                 if self.verbose {
                     println!(
-                        "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | alpha {:>8.3e} | note full_step",
-                        it, cost, r_norm, dx_norm, alpha
+                        "[nls] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | alpha {:>8.3e} | lambda {:>9.3e} | note full_step",
+                        it, cost, r_norm, dx_norm, alpha, lambda
                     );
                 }
             }
+
+            // Optional: relax damping a bit after a successful iteration.
+            // This prevents lambda from staying huge forever.
+            lambda = lambda.max(self.lambda) * 0.5;
+
+            it += 1;
         }
 
         LeastSquaresResult {
