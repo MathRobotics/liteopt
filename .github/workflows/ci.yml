@@ -3,10 +3,11 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
-  rust-tests:
+  test:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -14,39 +15,23 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Set up Python for PyO3
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Run cargo tests
-        run: cargo test --workspace --all-targets
-
-  python-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v3
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Run Rust tests
+        run: cargo test --workspace --all-targets
 
-      - name: Install Python dependencies
-        run: |
-          uv venv
-          uv pip install -e "liteopt-py[dev]"
+      - name: Sync Python dependencies
+        run: uv sync --project liteopt-py --extra dev
 
-      - name: Build liteopt Python extension
-        run: uv run maturin develop --manifest-path liteopt-py/Cargo.toml
+      - name: Build and install Python bindings
+        run: uv run --project liteopt-py --extra dev maturin develop --manifest-path liteopt-py/Cargo.toml --release
 
       - name: Run Python tests
-        run: uv run pytest liteopt-py/tests
+        run: uv run --project liteopt-py --extra dev pytest liteopt-py/tests
