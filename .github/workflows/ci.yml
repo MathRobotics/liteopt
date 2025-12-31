@@ -34,17 +34,19 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install Python dependencies
         run: |
-          python -m venv .venv
-          .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install maturin numpy pytest
+          uv venv
+          uv pip install maturin numpy pytest
 
       - name: Build liteopt Python extension
-        run: .venv/bin/maturin develop --manifest-path liteopt-py/Cargo.toml
+        run: uv run maturin develop --manifest-path liteopt-py/Cargo.toml
 
       - name: Run Python tests
-        run: .venv/bin/pytest liteopt-py/tests
+        run: uv run pytest liteopt-py/tests
