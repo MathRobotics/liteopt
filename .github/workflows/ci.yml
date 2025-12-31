@@ -43,7 +43,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           uv venv
-          uv pip install -e ./liteopt-py[dev]
+          uv pip install -e "liteopt-py[dev]"
 
       - name: Build liteopt Python extension
         run: uv run maturin develop --manifest-path liteopt-py/Cargo.toml
