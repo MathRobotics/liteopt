@@ -30,12 +30,14 @@ Repository = "https://github.com/MathRobotics/liteopt"
 dev = [
     "maturin>=1.10.2",
     "numpy>=1.24.4",
+    "pytest>=7.4",
 ]
 
 [project.optional-dependencies]
 dev = [
     "maturin>=1.10.2",
     "numpy>=1.24.4",
+    "pytest>=7.4",
 ]
 
 # module-name = "liteopt"
