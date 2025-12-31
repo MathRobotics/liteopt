@@ -32,4 +32,10 @@ dev = [
     "numpy>=1.24.4",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "maturin>=1.10.2",
+    "numpy>=1.24.4",
+]
+
 # module-name = "liteopt"
