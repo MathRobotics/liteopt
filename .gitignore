@@ -1,3 +1,4 @@
 /target
 cargo.lock
 uv.lock
+__pycache__
