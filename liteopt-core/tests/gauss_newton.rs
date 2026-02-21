@@ -1,7 +1,72 @@
 use liteopt::{
-    manifolds::EuclideanSpace, problems::least_squares::LeastSquaresProblem,
+    manifolds::{space::Space, EuclideanSpace},
+    problems::least_squares::LeastSquaresProblem,
     solvers::gauss_newton::GaussNewton,
 };
+
+#[derive(Clone, Copy, Debug, Default)]
+struct MyManifold;
+
+fn wrap_angle(theta: f64) -> f64 {
+    let two_pi = 2.0 * std::f64::consts::PI;
+    (theta + std::f64::consts::PI).rem_euclid(two_pi) - std::f64::consts::PI
+}
+
+impl Space for MyManifold {
+    type Point = Vec<f64>;
+    type Tangent = Vec<f64>;
+
+    fn zero_like(&self, x: &Self::Point) -> Self::Point {
+        vec![0.0; x.len()]
+    }
+
+    fn norm(&self, v: &Self::Point) -> f64 {
+        v.iter().map(|vi| vi * vi).sum::<f64>().sqrt()
+    }
+
+    fn scale_into(&self, out: &mut Self::Tangent, v: &Self::Tangent, alpha: f64) {
+        out.resize(v.len(), 0.0);
+        for i in 0..v.len() {
+            out[i] = alpha * v[i];
+        }
+    }
+
+    fn add_into(&self, out: &mut Self::Point, x: &Self::Point, v: &Self::Tangent) {
+        out.resize(x.len(), 0.0);
+        for i in 0..x.len() {
+            out[i] = wrap_angle(x[i] + v[i]);
+        }
+    }
+
+    fn difference_into(&self, out: &mut Self::Tangent, x: &Self::Point, y: &Self::Point) {
+        out.resize(x.len(), 0.0);
+        for i in 0..x.len() {
+            out[i] = wrap_angle(y[i] - x[i]);
+        }
+    }
+
+    fn zero_tangent_like(&self, x: &Self::Point) -> Self::Tangent {
+        vec![0.0; x.len()]
+    }
+
+    fn tangent_norm(&self, v: &Self::Tangent) -> f64 {
+        self.norm(v)
+    }
+
+    fn retract_into(
+        &self,
+        out: &mut Self::Point,
+        x: &Self::Point,
+        direction: &Self::Tangent,
+        alpha: f64,
+        _tmp: &mut Self::Tangent,
+    ) {
+        out.resize(x.len(), 0.0);
+        for i in 0..x.len() {
+            out[i] = wrap_angle(x[i] + alpha * direction[i]);
+        }
+    }
+}
 
 struct Planar2LinkProblem {
     l1: f64,
@@ -9,7 +74,10 @@ struct Planar2LinkProblem {
     target: [f64; 2],
 }
 
-impl LeastSquaresProblem<EuclideanSpace> for Planar2LinkProblem {
+impl<S> LeastSquaresProblem<S> for Planar2LinkProblem
+where
+    S: Space<Point = Vec<f64>, Tangent = Vec<f64>>,
+{
     fn residual_dim(&self) -> usize {
         2
     }
@@ -66,6 +134,43 @@ fn gauss_newton_planar_2link() {
 
     assert!(res.converged, "did not converge: {:?}", res);
     assert!(res.r_norm < 1e-6, "residual too large: {}", res.r_norm);
+}
+
+#[test]
+fn gauss_newton_planar_2link_with_my_manifold() {
+    let space = MyManifold;
+    let solver = GaussNewton {
+        space,
+        lambda: 1e-3,
+        step_scale: 1.0,
+        max_iters: 200,
+        tol_r: 1e-9,
+        tol_dq: 1e-12,
+        line_search: true,
+        ls_beta: 0.5,
+        ls_max_steps: 20,
+        c_armijo: 1e-4,
+        verbose: false,
+    };
+
+    let problem = Planar2LinkProblem {
+        l1: 1.0,
+        l2: 1.0,
+        target: [1.2, 0.6],
+    };
+
+    let q0 = vec![3.0 * std::f64::consts::PI, -2.0 * std::f64::consts::PI];
+    let res = solver.solve(q0, &problem);
+
+    assert!(res.converged, "did not converge: {:?}", res);
+    assert!(res.r_norm < 1e-6, "residual too large: {}", res.r_norm);
+    for qi in &res.x {
+        assert!(
+            *qi >= -std::f64::consts::PI && *qi < std::f64::consts::PI,
+            "angle should be wrapped into [-pi, pi): {}",
+            qi
+        );
+    }
 }
 
 #[test]

@@ -33,6 +33,8 @@ Lightweight optimization toolbox with a small Rust core and Python bindings.
 ## API Notes
 
 - Canonical Euclidean import: `liteopt::manifolds::EuclideanSpace`
+- Custom manifold sample: `liteopt-core/tests/gauss_newton.rs` (`MyManifold`)
 - Gauss-Newton solver import: `liteopt::solvers::gauss_newton::GaussNewton`
 - LM solver import: `liteopt::solvers::lm::LevenbergMarquardt`
 - Sample objective import: `liteopt::problems::test_functions::{Quadratic, Rosenbrock}`
+- Python custom manifold callbacks: see `liteopt-py/README.md`
