@@ -1,4 +1,4 @@
-use liteopt_core::solvers::gauss_newton::GaussNewton;
+use liteopt_core::solvers::gn::GaussNewton;
 use numpy::IntoPyArray;
 use numpy::{PyArray1, PyArray2};
 use numpy::{PyArrayMethods, PyUntypedArrayMethods};

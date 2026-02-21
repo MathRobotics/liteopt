@@ -1,0 +1,85 @@
+import numpy as np
+import pytest
+import liteopt
+
+
+TARGET = np.array([1.2, 0.6], dtype=float)
+L1 = 1.0
+L2 = 1.0
+
+
+def forward_kinematics(q):
+    q = np.asarray(q, dtype=float)
+    q1, q2 = q
+    return np.array(
+        [
+            L1 * np.cos(q1) + L2 * np.cos(q1 + q2),
+            L1 * np.sin(q1) + L2 * np.sin(q1 + q2),
+        ],
+        dtype=float,
+    )
+
+
+def residual(q):
+    return forward_kinematics(q) - TARGET
+
+
+def jacobian(q):
+    q = np.asarray(q, dtype=float)
+    q1, q2 = q
+    s1 = np.sin(q1)
+    c1 = np.cos(q1)
+    s12 = np.sin(q1 + q2)
+    c12 = np.cos(q1 + q2)
+    return np.array(
+        [
+            [-L1 * s1 - L2 * s12, -L2 * s12],
+            [L1 * c1 + L2 * c12, L2 * c12],
+        ],
+        dtype=float,
+    )
+
+
+def test_gn_planar_2link_converges_and_reaches_target():
+    x_star, cost, _, rnorm, _, ok = liteopt.gn(residual, jacobian, x0=[0.0, 0.0], verbose=False)
+
+    x_star = np.asarray(x_star, dtype=float)
+    p_star = forward_kinematics(x_star)
+    err = np.linalg.norm(p_star - TARGET)
+
+    assert ok
+    assert cost < 1e-12
+    assert rnorm < 1e-6
+    assert err < 1e-6
+
+
+def test_gn_respects_max_iters():
+    _, cost_short, iters_short, rnorm_short, _, ok_short = liteopt.gn(
+        residual,
+        jacobian,
+        x0=[0.0, 0.0],
+        max_iters=1,
+        verbose=False,
+    )
+    _, cost_full, iters_full, rnorm_full, _, ok_full = liteopt.gn(
+        residual,
+        jacobian,
+        x0=[0.0, 0.0],
+        max_iters=100,
+        verbose=False,
+    )
+
+    assert iters_short == 1
+    assert iters_full <= 100
+    assert not ok_short
+    assert ok_full
+    assert cost_full < cost_short
+    assert rnorm_full < rnorm_short
+
+
+def test_gn_raises_for_invalid_jacobian_size():
+    def bad_jacobian(_x):
+        return np.zeros((1, 1), dtype=float)
+
+    with pytest.raises(ValueError, match="jacobian size mismatch"):
+        liteopt.gn(residual, bad_jacobian, x0=[0.0, 0.0], verbose=False)

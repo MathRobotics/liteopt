@@ -5,6 +5,6 @@ mod bindings;
 #[pymodule]
 fn liteopt(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     bindings::gd::register(m)?;
-    bindings::gauss_newton::register(m)?;
+    bindings::gn::register(m)?;
     Ok(())
 }
