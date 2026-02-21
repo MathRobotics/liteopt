@@ -1,4 +1,4 @@
-use liteopt::{gd::GradientDescent, space::EuclideanSpace};
+use liteopt::{manifolds::EuclideanSpace, solvers::gd::GradientDescent};
 
 fn main() {
     let space = EuclideanSpace;

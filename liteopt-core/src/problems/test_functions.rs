@@ -1,20 +1,7 @@
-use crate::space::{EuclideanSpace, Space};
+use crate::manifolds::EuclideanSpace;
+use crate::problems::objective::Objective;
 
-/// Objective function to be minimized.
-///
-/// - `S::Point` represents points on the space
-/// - In `gradient` the user computes the gradient and writes into the buffer
-pub trait Objective<S: Space> {
-    /// Function value f(x) at x.
-    fn value(&self, x: &S::Point) -> f64;
-
-    /// Write the gradient ∇f(x) at x into grad.
-    ///
-    /// grad is assumed to be pre-initialized, e.g., via zero_like(x).
-    fn gradient(&self, x: &S::Point, grad: &mut S::Point);
-
-}
-/// quadratic of the form f(x) = 0.5 * x^T A x - b^T x.
+/// Quadratic of the form f(x) = 0.5 * x^T A x - b^T x.
 pub struct Quadratic {
     pub a: f64,
     pub b: f64,
@@ -38,8 +25,8 @@ impl Objective<EuclideanSpace> for Quadratic {
 /// 2D Rosenbrock function.
 /// f(x, y) = (a - x)^2 + b (y - x^2)^2
 pub struct Rosenbrock {
-    pub a : f64,
-    pub b : f64,
+    pub a: f64,
+    pub b: f64,
 }
 
 impl Objective<EuclideanSpace> for Rosenbrock {

@@ -1,4 +1,3 @@
-
 // ----------------- helpers (dependency-free) -----------------
 
 pub fn dot(a: &[f64], b: &[f64]) -> f64 {

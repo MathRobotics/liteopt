@@ -1,9 +1,9 @@
-use liteopt::{nls::NonlinearLeastSquares, space::EuclideanSpace};
+use liteopt::{manifolds::EuclideanSpace, solvers::gauss_newton::GaussNewton};
 
 fn main() {
     let space = EuclideanSpace;
 
-    let solver = NonlinearLeastSquares {
+    let solver = GaussNewton {
         space,
         lambda: 1e-3,
         step_scale: 1.0,
