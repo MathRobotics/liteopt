@@ -1,6 +1,9 @@
 use liteopt::{
     manifolds::EuclideanSpace,
-    problems::test_functions::{Quadratic, Rosenbrock},
+    problems::{
+        objective::Objective,
+        test_functions::{Quadratic, Rosenbrock},
+    },
     solvers::gd::GradientDescent,
 };
 
@@ -19,10 +22,12 @@ fn quadratic_minimization() {
     };
 
     let x0 = vec![0.0];
+    let f0 = obj.value(&x0);
     let result = solver.minimize(&obj, x0);
 
     assert!(result.converged);
     assert!((result.x[0] - 2.0).abs() < 1e-3);
+    assert!(result.f < f0);
 }
 
 #[test]
@@ -38,9 +43,12 @@ fn rosenbrock_minimization() {
     };
 
     let x0 = vec![-1.2, 1.0];
+    let f0 = obj.value(&x0);
     let result = solver.minimize(&obj, x0);
 
     // True minimizer is (1,1)
+    assert!(result.converged);
+    assert!(result.f < f0);
     assert!((result.x[0] - 1.0).abs() < 5e-2);
     assert!((result.x[1] - 1.0).abs() < 5e-2);
 }
@@ -110,4 +118,49 @@ fn nonlinear_minimization_with_fn() {
     // True minimizer is (pi/3, pi/6)
     assert!((result.x[0] - PI / 3.0).abs() < 1e-3);
     assert!((result.x[1] - PI / 6.0).abs() < 1e-3);
+}
+
+#[test]
+fn gd_respects_max_iters_and_step_size() {
+    let space = EuclideanSpace;
+    let value_fn = |x: &Vec<f64>| {
+        let d = x[0] - 3.0;
+        d * d
+    };
+    let grad_fn = |x: &Vec<f64>, grad: &mut Vec<f64>| {
+        grad[0] = 2.0 * (x[0] - 3.0);
+    };
+
+    let short_small = GradientDescent {
+        space,
+        step_size: 0.01,
+        max_iters: 1,
+        tol_grad: 1e-12,
+        verbose: false,
+    }
+    .minimize_with_fn(vec![0.0], value_fn, grad_fn);
+
+    let short_large = GradientDescent {
+        space,
+        step_size: 0.1,
+        max_iters: 1,
+        tol_grad: 1e-12,
+        verbose: false,
+    }
+    .minimize_with_fn(vec![0.0], value_fn, grad_fn);
+
+    let long_run = GradientDescent {
+        space,
+        step_size: 0.1,
+        max_iters: 200,
+        tol_grad: 1e-9,
+        verbose: false,
+    }
+    .minimize_with_fn(vec![0.0], value_fn, grad_fn);
+
+    assert!(!short_small.converged);
+    assert!(!short_large.converged);
+    assert!(long_run.converged);
+    assert!(short_small.x[0] < short_large.x[0] && short_large.x[0] < 3.0);
+    assert!(long_run.f < short_large.f);
 }
