@@ -1,5 +1,7 @@
 use liteopt::{
-    gd::GradientDescent, objective::Quadratic, objective::Rosenbrock, space::EuclideanSpace,
+    manifolds::EuclideanSpace,
+    problems::test_functions::{Quadratic, Rosenbrock},
+    solvers::gd::GradientDescent,
 };
 
 #[test]

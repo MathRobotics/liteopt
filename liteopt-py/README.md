@@ -27,3 +27,21 @@ x0 = [-1.2, 1.0]
 x_star, f_star, converged = liteopt.gd(f, grad, x0, step_size=1e-3, max_iters=200_000, tol_grad=1e-4)
 print(converged, x_star, f_star)
 ```
+
+Gauss-Newton for nonlinear least squares:
+
+```python
+import liteopt
+
+def residual(x):
+    # returns m-dimensional residual
+    ...
+
+def jacobian(x):
+    # returns m x n Jacobian
+    ...
+
+x0 = [0.0, 0.0]
+x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(residual, jacobian, x0=x0)
+print(ok, x_star, cost)
+```
