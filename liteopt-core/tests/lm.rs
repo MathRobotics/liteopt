@@ -54,26 +54,32 @@ fn target_error_norm(problem: &Planar2LinkProblem, q: &[f64]) -> f64 {
     (ex * ex + ey * ey).sqrt()
 }
 
-#[test]
-fn levenberg_marquardt_planar_two_link_problem_converges() {
-    let space = EuclideanSpace;
-    let solver = LevenbergMarquardt {
-        space,
+fn planar_two_link_problem() -> Planar2LinkProblem {
+    Planar2LinkProblem {
+        l1: 1.0,
+        l2: 1.0,
+        target: [1.2, 0.6],
+    }
+}
+
+fn levenberg_marquardt_solver(max_iters: usize) -> LevenbergMarquardt<EuclideanSpace> {
+    LevenbergMarquardt {
+        space: EuclideanSpace,
         lambda: 1e-3,
         lambda_up: 10.0,
         lambda_down: 0.5,
         step_scale: 1.0,
-        max_iters: 200,
+        max_iters,
         tol_r: 1e-9,
         tol_dq: 1e-12,
         verbose: false,
-    };
+    }
+}
 
-    let problem = Planar2LinkProblem {
-        l1: 1.0,
-        l2: 1.0,
-        target: [1.2, 0.6],
-    };
+#[test]
+fn levenberg_marquardt_behavior_converges_on_planar_two_link_problem() {
+    let solver = levenberg_marquardt_solver(200);
+    let problem = planar_two_link_problem();
 
     let q0 = vec![0.0, 0.0];
     let initial_err = target_error_norm(&problem, &q0);
@@ -93,47 +99,25 @@ fn levenberg_marquardt_planar_two_link_problem_converges() {
 }
 
 #[test]
-fn levenberg_marquardt_respects_maximum_iterations() {
-    let space = EuclideanSpace;
-    let solver_short = LevenbergMarquardt {
-        space,
-        lambda: 1e-3,
-        lambda_up: 10.0,
-        lambda_down: 0.5,
-        step_scale: 1.0,
-        max_iters: 1,
-        tol_r: 1e-9,
-        tol_dq: 1e-12,
-        verbose: false,
-    };
-    let solver_full = LevenbergMarquardt {
-        space,
-        lambda: 1e-3,
-        lambda_up: 10.0,
-        lambda_down: 0.5,
-        step_scale: 1.0,
-        max_iters: 200,
-        tol_r: 1e-9,
-        tol_dq: 1e-12,
-        verbose: false,
-    };
-
-    let problem = Planar2LinkProblem {
-        l1: 1.0,
-        l2: 1.0,
-        target: [1.2, 0.6],
-    };
-
-    let short = solver_short.solve(vec![0.0, 0.0], &problem);
-    let full = solver_full.solve(vec![0.0, 0.0], &problem);
+fn levenberg_marquardt_behavior_stops_after_maximum_iterations() {
+    let problem = planar_two_link_problem();
+    let short = levenberg_marquardt_solver(1).solve(vec![0.0, 0.0], &problem);
 
     assert!(
         !short.converged,
         "short run should not converge: {:?}",
         short
     );
-    assert!(full.converged, "full run should converge: {:?}", full);
     assert_eq!(short.iters, 1);
+}
+
+#[test]
+fn levenberg_marquardt_behavior_longer_run_reduces_cost_more_than_short_run() {
+    let problem = planar_two_link_problem();
+    let short = levenberg_marquardt_solver(1).solve(vec![0.0, 0.0], &problem);
+    let full = levenberg_marquardt_solver(200).solve(vec![0.0, 0.0], &problem);
+
+    assert!(full.converged, "full run should converge: {:?}", full);
     assert!(full.iters <= 200);
     assert!(
         full.cost < short.cost,
@@ -144,19 +128,8 @@ fn levenberg_marquardt_respects_maximum_iterations() {
 }
 
 #[test]
-fn levenberg_marquardt_stops_after_repeated_linear_solve_failure() {
-    let space = EuclideanSpace;
-    let solver = LevenbergMarquardt {
-        space,
-        lambda: 1e-3,
-        lambda_up: 10.0,
-        lambda_down: 0.5,
-        step_scale: 1.0,
-        max_iters: 3,
-        tol_r: 1e-9,
-        tol_dq: 1e-12,
-        verbose: false,
-    };
+fn levenberg_marquardt_behavior_stops_after_repeated_linear_solve_failure() {
+    let solver = levenberg_marquardt_solver(3);
 
     let residual_fn = |_x: &[f64], r: &mut [f64]| {
         r[0] = 1.0;
@@ -180,7 +153,7 @@ fn levenberg_marquardt_stops_after_repeated_linear_solve_failure() {
 }
 
 #[test]
-fn levenberg_marquardt_default_uses_euclidean_space() {
+fn levenberg_marquardt_behavior_default_uses_euclidean_space() {
     let solver = LevenbergMarquardt::default();
 
     let residual_fn = |x: &[f64], r: &mut [f64]| {
