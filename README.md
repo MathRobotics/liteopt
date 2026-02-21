@@ -47,6 +47,14 @@ println!("{:?}", res.x);
 
 Python examples are in `liteopt-py/README.md`.
 
+Bundled Rust examples in `liteopt-core/examples/` can be run with:
+
+```bash
+cargo run -p liteopt --example quadratic
+cargo run -p liteopt --example nonlinear_least_squares_demo
+cargo run -p liteopt --example my_manifold
+```
+
 ## `liteopt-core` Module Policy
 
 - `manifolds/`
