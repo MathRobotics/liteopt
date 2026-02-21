@@ -26,7 +26,7 @@ def quadratic_1d_grad(x):
     return [2.0 * (x0 - 3.0)]
 
 
-def test_gd_rosenbrock_converges_and_reduces_objective():
+def test_gradient_descent_rosenbrock_converges_and_reduces_objective():
     x0 = [-1.2, 1.0]
     f0 = rosenbrock(x0)
 
@@ -46,7 +46,7 @@ def test_gd_rosenbrock_converges_and_reduces_objective():
     assert np.allclose(x_star, [1.0, 1.0], atol=5e-2)
 
 
-def test_gd_respects_max_iters():
+def test_gradient_descent_respects_maximum_iterations():
     x0 = [0.0]
 
     _, f_one_step, converged_one_step = liteopt.gd(
@@ -71,7 +71,7 @@ def test_gd_respects_max_iters():
     assert f_many_steps < f_one_step
 
 
-def test_gd_step_size_changes_single_step_result():
+def test_gradient_descent_step_size_changes_single_step_result():
     x0 = [0.0]
 
     x_small, _, _ = liteopt.gd(

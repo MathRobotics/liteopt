@@ -8,7 +8,7 @@ use liteopt::{
 };
 
 #[test]
-fn quadratic_minimization() {
+fn gradient_descent_quadratic_minimization() {
     // f(x) = 0.5 * a x^2 - b x
     // Minimizer is x* = b / a
     let obj = Quadratic { a: 2.0, b: 4.0 }; // f(x) = x^2 - 4x => x* = 2
@@ -31,7 +31,7 @@ fn quadratic_minimization() {
 }
 
 #[test]
-fn rosenbrock_minimization() {
+fn gradient_descent_rosenbrock_minimization() {
     let obj = Rosenbrock { a: 1.0, b: 100.0 };
     let space = EuclideanSpace;
     let solver = GradientDescent {
@@ -54,7 +54,7 @@ fn rosenbrock_minimization() {
 }
 
 #[test]
-fn nonlinear_minimization_with_fn() {
+fn gradient_descent_nonlinear_minimization_with_function_callbacks() {
     let space = EuclideanSpace;
     let solver = GradientDescent {
         space,
@@ -121,7 +121,7 @@ fn nonlinear_minimization_with_fn() {
 }
 
 #[test]
-fn gd_respects_max_iters_and_step_size() {
+fn gradient_descent_respects_maximum_iterations_and_step_size() {
     let space = EuclideanSpace;
     let value_fn = |x: &Vec<f64>| {
         let d = x[0] - 3.0;
@@ -166,7 +166,7 @@ fn gd_respects_max_iters_and_step_size() {
 }
 
 #[test]
-fn gd_default_can_omit_space_field() {
+fn gradient_descent_default_can_omit_space_field() {
     let solver = GradientDescent {
         step_size: 0.1,
         max_iters: 500,

@@ -40,7 +40,7 @@ def jacobian(q):
     )
 
 
-def test_gn_planar_2link_converges_and_reaches_target():
+def test_gauss_newton_planar_two_link_converges_and_reaches_target():
     x_star, cost, _, rnorm, _, ok = liteopt.gn(residual, jacobian, x0=[0.0, 0.0], verbose=False)
 
     x_star = np.asarray(x_star, dtype=float)
@@ -53,7 +53,7 @@ def test_gn_planar_2link_converges_and_reaches_target():
     assert err < 1e-6
 
 
-def test_gn_respects_max_iters():
+def test_gauss_newton_respects_maximum_iterations():
     _, cost_short, iters_short, rnorm_short, _, ok_short = liteopt.gn(
         residual,
         jacobian,
@@ -77,7 +77,7 @@ def test_gn_respects_max_iters():
     assert rnorm_full < rnorm_short
 
 
-def test_gn_raises_for_invalid_jacobian_size():
+def test_gauss_newton_raises_for_invalid_jacobian_size():
     def bad_jacobian(_x):
         return np.zeros((1, 1), dtype=float)
 

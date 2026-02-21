@@ -123,7 +123,7 @@ fn target_error_norm(problem: &Planar2LinkProblem, q: &[f64]) -> f64 {
 }
 
 #[test]
-fn gn_planar_2link() {
+fn gauss_newton_planar_two_link_problem_converges() {
     let space = EuclideanSpace;
     let solver = GaussNewton {
         space,
@@ -163,7 +163,7 @@ fn gn_planar_2link() {
 }
 
 #[test]
-fn gn_planar_2link_with_my_manifold() {
+fn gauss_newton_planar_two_link_problem_converges_with_custom_manifold() {
     let space = MyManifold;
     let solver = GaussNewton {
         space,
@@ -210,7 +210,7 @@ fn gn_planar_2link_with_my_manifold() {
 }
 
 #[test]
-fn gn_respects_max_iters() {
+fn gauss_newton_respects_maximum_iterations() {
     let space = EuclideanSpace;
     let solver_short = GaussNewton {
         space,
@@ -265,7 +265,7 @@ fn gn_respects_max_iters() {
 }
 
 #[test]
-fn gn_stops_after_repeated_linear_solve_failure() {
+fn gauss_newton_stops_after_repeated_linear_solve_failure() {
     let space = EuclideanSpace;
     let solver = GaussNewton {
         space,
@@ -303,7 +303,7 @@ fn gn_stops_after_repeated_linear_solve_failure() {
 }
 
 #[test]
-fn gn_default_uses_euclidean_space() {
+fn gauss_newton_default_uses_euclidean_space() {
     let solver = GaussNewton::default();
 
     let residual_fn = |x: &[f64], r: &mut [f64]| {

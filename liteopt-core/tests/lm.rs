@@ -55,7 +55,7 @@ fn target_error_norm(problem: &Planar2LinkProblem, q: &[f64]) -> f64 {
 }
 
 #[test]
-fn levenberg_marquardt_planar_2link() {
+fn levenberg_marquardt_planar_two_link_problem_converges() {
     let space = EuclideanSpace;
     let solver = LevenbergMarquardt {
         space,
@@ -93,7 +93,7 @@ fn levenberg_marquardt_planar_2link() {
 }
 
 #[test]
-fn levenberg_marquardt_respects_max_iters() {
+fn levenberg_marquardt_respects_maximum_iterations() {
     let space = EuclideanSpace;
     let solver_short = LevenbergMarquardt {
         space,
