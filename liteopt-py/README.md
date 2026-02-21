@@ -45,3 +45,39 @@ x0 = [0.0, 0.0]
 x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(residual, jacobian, x0=x0)
 print(ok, x_star, cost)
 ```
+
+Custom manifold callbacks (optional):
+
+```python
+import math
+import liteopt
+
+def wrap(a: float) -> float:
+    return (a + math.pi) % (2.0 * math.pi) - math.pi
+
+class MyManifold:
+    def retract(self, x, direction, alpha):
+        # x_next = Retr_x(alpha * direction)
+        return [wrap(xi + alpha * di) for xi, di in zip(x, direction)]
+
+    def tangent_norm(self, v):
+        return math.sqrt(sum(vi * vi for vi in v))
+
+def residual(x):
+    return [x[0] - 0.3, x[1] + 0.2]
+
+def jacobian(x):
+    return [[1.0, 0.0], [0.0, 1.0]]
+
+x0 = [3.5, -4.0]
+x_star, cost, *_ = liteopt.gn(residual, jacobian, x0=x0, manifold=MyManifold())
+print(x_star, cost)
+```
+
+`gd(...)` and `gn(...)` accept `manifold=...`.
+Supported methods on `manifold` are:
+- `retract(x, direction, alpha) -> list[float]`
+- `tangent_norm(v) -> float`
+- `scale(v, alpha) -> list[float]`
+- `add(x, v) -> list[float]`
+- `difference(x, y) -> list[float]`

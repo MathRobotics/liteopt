@@ -1,14 +1,18 @@
-use liteopt_core::{manifolds::EuclideanSpace, solvers::gauss_newton::GaussNewton};
+use liteopt_core::solvers::gauss_newton::GaussNewton;
 use numpy::IntoPyArray;
 use numpy::{PyArray1, PyArray2};
 use numpy::{PyArrayMethods, PyUntypedArrayMethods};
 use pyo3::prelude::*;
 use std::cell::RefCell;
 
+use crate::bindings::manifold::PyVecManifold;
+
 /// Nonlinear least squares solver exposed to Python.
 ///
 /// residual: callable(x: list[float]) -> list[float]           (len = m)
 /// jacobian: callable(x: list[float]) -> list[float]           (len = m*n, row-major)
+/// manifold: optional object with callbacks such as
+///   retract(x, direction, alpha) and tangent_norm(v)
 #[pyfunction(
     signature = (
         residual,
@@ -24,7 +28,8 @@ use std::cell::RefCell;
         ls_beta = None,
         ls_max_steps = None,
         c_armijo = None,
-        verbose = None
+        verbose = None,
+        manifold = None
     )
 )]
 fn gn(
@@ -43,8 +48,9 @@ fn gn(
     ls_max_steps: Option<usize>,
     c_armijo: Option<f64>,
     verbose: Option<bool>,
+    manifold: Option<Py<PyAny>>,
 ) -> PyResult<(Vec<f64>, f64, usize, f64, f64, bool)> {
-    let space = EuclideanSpace;
+    let (space, manifold_err) = PyVecManifold::from_python(py, manifold)?;
     let solver = GaussNewton {
         space,
         lambda: lambda_.unwrap_or(1e-3),
@@ -206,6 +212,9 @@ fn gn(
 
     // If any python error occurred inside callbacks, raise it
     if let Some(e) = err_cell.into_inner() {
+        return Err(e);
+    }
+    if let Some(e) = manifold_err.take() {
         return Err(e);
     }
 

@@ -1,10 +1,14 @@
-use liteopt_core::{manifolds::EuclideanSpace, solvers::gd::GradientDescent};
+use liteopt_core::solvers::gd::GradientDescent;
 use pyo3::prelude::*;
+
+use crate::bindings::manifold::PyVecManifold;
 
 /// Gradient Descent optimizer exposed to Python.
 ///
 /// f:    callable(x: list[float]) -> float
 /// grad: callable(x: list[float]) -> list[float]
+/// manifold: optional object with callbacks such as
+///   retract(x, direction, alpha) and tangent_norm(v)
 #[pyfunction(
     signature = (
         f,
@@ -13,7 +17,8 @@ use pyo3::prelude::*;
         step_size = None,
         max_iters = None,
         tol_grad = None,
-        verbose = None
+        verbose = None,
+        manifold = None
     )
 )]
 fn gd(
@@ -25,8 +30,9 @@ fn gd(
     max_iters: Option<usize>,
     tol_grad: Option<f64>,
     verbose: Option<bool>,
+    manifold: Option<Py<PyAny>>,
 ) -> PyResult<(Vec<f64>, f64, bool)> {
-    let space = EuclideanSpace;
+    let (space, manifold_err) = PyVecManifold::from_python(py, manifold)?;
     let solver = GradientDescent {
         space,
         step_size: step_size.unwrap_or(1e-3),
@@ -72,6 +78,9 @@ fn gd(
     };
 
     let result = solver.minimize_with_fn(x0, f_closure, grad_closure);
+    if let Some(e) = manifold_err.take() {
+        return Err(e);
+    }
 
     Ok((result.x, result.f, result.converged))
 }
