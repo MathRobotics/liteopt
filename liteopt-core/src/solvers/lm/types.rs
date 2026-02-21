@@ -1,4 +1,4 @@
-use crate::manifolds::space::Space;
+use crate::manifolds::{space::Space, EuclideanSpace};
 
 #[derive(Clone, Debug)]
 pub struct LevenbergMarquardtResult<P> {
@@ -11,7 +11,7 @@ pub struct LevenbergMarquardtResult<P> {
 }
 
 #[derive(Clone, Debug)]
-pub struct LevenbergMarquardt<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> {
+pub struct LevenbergMarquardt<S: Space<Point = Vec<f64>, Tangent = Vec<f64>> = EuclideanSpace> {
     pub space: S,
     pub lambda: f64,      // initial damping
     pub lambda_up: f64,   // multiply lambda on rejected step
@@ -21,4 +21,34 @@ pub struct LevenbergMarquardt<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> {
     pub tol_r: f64,  // stop if ||r|| < tol_r
     pub tol_dq: f64, // stop if ||local update|| < tol_dq
     pub verbose: bool,
+}
+
+impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
+    /// Build a solver on an explicitly provided space.
+    pub fn with_space(space: S) -> Self {
+        Self {
+            space,
+            lambda: 1e-3,
+            lambda_up: 10.0,
+            lambda_down: 0.5,
+            step_scale: 1.0,
+            max_iters: 100,
+            tol_r: 1e-6,
+            tol_dq: 1e-6,
+            verbose: false,
+        }
+    }
+}
+
+impl LevenbergMarquardt<EuclideanSpace> {
+    /// Build a solver with Euclidean space defaults.
+    pub fn new() -> Self {
+        Self::with_space(EuclideanSpace)
+    }
+}
+
+impl Default for LevenbergMarquardt<EuclideanSpace> {
+    fn default() -> Self {
+        Self::new()
+    }
 }

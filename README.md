@@ -12,9 +12,14 @@ Lightweight optimization toolbox with a small Rust core and Python bindings.
 Rust (Gradient Descent):
 
 ```rust
-use liteopt::{manifolds::EuclideanSpace, solvers::gd::GradientDescent};
+use liteopt::solvers::gd::GradientDescent;
 
-let solver = GradientDescent { space: EuclideanSpace, step_size: 0.1, max_iters: 100, tol_grad: 1e-9, verbose: false };
+let solver = GradientDescent {
+    step_size: 0.1,
+    max_iters: 100,
+    tol_grad: 1e-9,
+    ..Default::default() // space is EuclideanSpace
+};
 let res = solver.minimize_with_fn(vec![0.0], |x| (x[0] - 3.0).powi(2), |x, g| g[0] = 2.0 * (x[0] - 3.0));
 println!("{:?}", res.x);
 ```
@@ -22,9 +27,20 @@ println!("{:?}", res.x);
 Rust (Gauss-Newton):
 
 ```rust
-use liteopt::{manifolds::EuclideanSpace, solvers::gn::GaussNewton};
+use liteopt::solvers::gn::GaussNewton;
 
-let solver = GaussNewton { space: EuclideanSpace, lambda: 1e-3, step_scale: 1.0, max_iters: 20, tol_r: 1e-12, tol_dq: 1e-12, line_search: true, ls_beta: 0.5, ls_max_steps: 20, c_armijo: 1e-4, verbose: false };
+let solver = GaussNewton {
+    lambda: 1e-3,
+    step_scale: 1.0,
+    max_iters: 20,
+    tol_r: 1e-12,
+    tol_dq: 1e-12,
+    line_search: true,
+    ls_beta: 0.5,
+    ls_max_steps: 20,
+    c_armijo: 1e-4,
+    ..Default::default() // space is EuclideanSpace
+};
 let res = solver.solve_with_fn(2, vec![0.0, 0.0], |x, r| { r[0] = x[0] - 1.0; r[1] = x[1] + 2.0; }, |_x, j| { j[0] = 1.0; j[1] = 0.0; j[2] = 0.0; j[3] = 1.0; }, |_x| {});
 println!("{:?}", res.x);
 ```
@@ -57,6 +73,8 @@ Python examples are in `liteopt-py/README.md`.
 ## API Notes
 
 - Canonical Euclidean import: `liteopt::manifolds::EuclideanSpace`
+- If `space` is omitted, `GradientDescent::default()`, `GaussNewton::default()`, and `LevenbergMarquardt::default()` use `EuclideanSpace`.
+- Explicit manifold selection is available via `GradientDescent::with_space(...)`, `GaussNewton::with_space(...)`, and `LevenbergMarquardt::with_space(...)`.
 - Custom manifold sample: `liteopt-core/tests/gn.rs` (`MyManifold`)
 - Gauss-Newton solver import: `liteopt::solvers::gn::GaussNewton`
 - LM solver import: `liteopt::solvers::lm::LevenbergMarquardt`

@@ -301,3 +301,20 @@ fn gn_stops_after_repeated_linear_solve_failure() {
     );
     assert_eq!(res.iters, 3, "solver should stop exactly at max_iters");
 }
+
+#[test]
+fn gn_default_uses_euclidean_space() {
+    let solver = GaussNewton::default();
+
+    let residual_fn = |x: &[f64], r: &mut [f64]| {
+        r[0] = x[0] - 2.0;
+    };
+    let jacobian_fn = |_x: &[f64], j: &mut [f64]| {
+        j[0] = 1.0;
+    };
+    let project = |_x: &mut [f64]| {};
+
+    let res = solver.solve_with_fn(1, vec![0.0], residual_fn, jacobian_fn, project);
+    assert!(res.converged, "default solver should converge: {:?}", res);
+    assert!((res.x[0] - 2.0).abs() < 1e-6);
+}

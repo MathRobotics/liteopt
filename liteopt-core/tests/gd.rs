@@ -164,3 +164,27 @@ fn gd_respects_max_iters_and_step_size() {
     assert!(short_small.x[0] < short_large.x[0] && short_large.x[0] < 3.0);
     assert!(long_run.f < short_large.f);
 }
+
+#[test]
+fn gd_default_can_omit_space_field() {
+    let solver = GradientDescent {
+        step_size: 0.1,
+        max_iters: 500,
+        tol_grad: 1e-9,
+        ..Default::default()
+    };
+
+    let result = solver.minimize_with_fn(
+        vec![0.0],
+        |x| {
+            let d = x[0] - 3.0;
+            d * d
+        },
+        |x, grad| {
+            grad[0] = 2.0 * (x[0] - 3.0);
+        },
+    );
+
+    assert!(result.converged);
+    assert!((result.x[0] - 3.0).abs() < 1e-6);
+}
