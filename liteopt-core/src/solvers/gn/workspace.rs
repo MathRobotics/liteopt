@@ -7,7 +7,6 @@ pub(super) struct GaussNewtonWorkspace {
     pub(super) g: Vec<f64>,
     pub(super) x_trial: Vec<f64>,
     pub(super) r_trial: Vec<f64>,
-    pub(super) x_next: Vec<f64>,
     pub(super) tmp: Vec<f64>,
 }
 
@@ -22,7 +21,6 @@ impl GaussNewtonWorkspace {
             g: vec![0.0f64; n],
             x_trial: vec![0.0f64; n],
             r_trial: vec![0.0f64; m],
-            x_next: vec![0.0f64; n],
             tmp: vec![0.0f64; n],
         }
     }
