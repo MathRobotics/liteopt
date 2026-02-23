@@ -1,16 +1,15 @@
-use liteopt_core::solvers::gn::GaussNewton;
-use numpy::IntoPyArray;
-use numpy::{PyArray1, PyArray2};
-use numpy::{PyArrayMethods, PyUntypedArrayMethods};
+use liteopt_core::solvers::gn::{ArmijoBacktracking, GaussNewton, NoLineSearch};
 use pyo3::prelude::*;
-use std::cell::RefCell;
 
+use crate::bindings::callbacks::{PyErrState, PyLeastSquaresCallbacks};
+use crate::bindings::line_search::PyLineSearchPolicy;
 use crate::bindings::manifold::PyVecManifold;
 
 /// Nonlinear least squares solver exposed to Python.
 ///
 /// residual: callable(x: list[float]) -> list[float]           (len = m)
 /// jacobian: callable(x: list[float]) -> list[float]           (len = m*n, row-major)
+/// line_search: bool or callable(ctx: dict) -> alpha or (accepted, alpha)
 /// manifold: optional object with callbacks such as
 ///   retract(x, direction, alpha) and tangent_norm(v)
 #[pyfunction(
@@ -43,7 +42,7 @@ fn gn(
     max_iters: Option<usize>,
     tol_r: Option<f64>,
     tol_dx: Option<f64>,
-    line_search: Option<bool>,
+    line_search: Option<Py<PyAny>>,
     ls_beta: Option<f64>,
     ls_max_steps: Option<usize>,
     c_armijo: Option<f64>,
@@ -58,160 +57,74 @@ fn gn(
         max_iters: max_iters.unwrap_or(100),
         tol_r: tol_r.unwrap_or(1e-6),
         tol_dq: tol_dx.unwrap_or(1e-6),
-        line_search: line_search.unwrap_or(true),
-        ls_beta: ls_beta.unwrap_or(0.5),
-        ls_max_steps: ls_max_steps.unwrap_or(20),
-        c_armijo: c_armijo.unwrap_or(1e-4),
         verbose: verbose.unwrap_or(false),
     };
 
-    // Python 側 callable をこの GIL コンテキストに紐付けて clone
-    let residual_obj = residual.clone_ref(py);
-    let project_obj = project.map(|p| p.clone_ref(py));
+    let err_state = PyErrState::default();
+    let callbacks = PyLeastSquaresCallbacks::new(residual, jacobian, project, err_state.clone());
+    let m = callbacks.infer_residual_dim(py, &x0)?;
 
-    // ---- infer m by calling residual(x0) once ----
-    let out0 = residual_obj.call1(py, (x0.clone(),))?;
-    let r0: Vec<f64> = out0.extract(py)?;
-    let m = r0.len();
-    if m == 0 {
-        return Err(pyo3::exceptions::PyValueError::new_err(
-            "residual(x0) returned empty list; cannot infer residual dimension m",
-        ));
+    let mut residual_fn = |x: &[f64], r_out: &mut [f64]| callbacks.residual_into(py, x, r_out);
+    let mut jacobian_fn = |x: &[f64], j_out: &mut [f64]| callbacks.jacobian_into(py, x, j_out);
+    let mut project_fn = |x: &mut [f64]| callbacks.project_in_place(py, x);
+
+    enum LineSearchMode {
+        Armijo,
+        Disabled,
+        Custom(Py<PyAny>),
     }
 
-    // ---- error propagation from closures ----
-    let err_cell: RefCell<Option<PyErr>> = RefCell::new(None);
-
-    // residual_fn(x, r_out)
-    let mut residual_fn = |x: &[f64], r_out: &mut [f64]| {
-        if err_cell.borrow().is_some() {
-            return;
-        }
-
-        let res: PyResult<()> = (|| {
-            let out = residual.bind(py).call1((x.to_vec(),))?; // <- Bound<'py, PyAny>
-
-            if let Ok(arr) = out.cast::<PyArray1<f64>>() {
-                let owned;
-                let arr_c = if arr.is_contiguous() {
-                    arr
-                } else {
-                    owned = arr.to_owned_array().into_pyarray(py);
-                    &owned
-                };
-                let slice = unsafe { arr_c.as_slice()? };
-                if slice.len() != r_out.len() {
-                    return Err(pyo3::exceptions::PyValueError::new_err(
-                        "residual length mismatch",
-                    ));
-                }
-                r_out.copy_from_slice(slice);
-                Ok(())
-            } else {
-                let vec: Vec<f64> = out.extract()?;
-                if vec.len() != r_out.len() {
-                    return Err(pyo3::exceptions::PyValueError::new_err(
-                        "residual length mismatch",
-                    ));
-                }
-                r_out.copy_from_slice(&vec);
-                Ok(())
-            }
-        })();
-
-        if let Err(e) = res {
-            *err_cell.borrow_mut() = Some(e);
-        }
+    let line_search_mode = match line_search {
+        None => LineSearchMode::Armijo,
+        Some(obj) => match obj.bind(py).extract::<bool>() {
+            Ok(true) => LineSearchMode::Armijo,
+            Ok(false) => LineSearchMode::Disabled,
+            Err(_) => LineSearchMode::Custom(obj),
+        },
     };
 
-    // jacobian_fn(x, j_out)  (row-major m*n)
-    let mut jacobian_fn = |x: &[f64], j_out: &mut [f64]| {
-        if err_cell.borrow().is_some() {
-            return;
+    let result = match line_search_mode {
+        LineSearchMode::Armijo => {
+            let mut ls = ArmijoBacktracking::new(
+                ls_beta.unwrap_or(0.5),
+                ls_max_steps.unwrap_or(20),
+                c_armijo.unwrap_or(1e-4),
+            );
+            solver.solve_with_fn(
+                m,
+                x0,
+                &mut residual_fn,
+                &mut jacobian_fn,
+                &mut project_fn,
+                &mut ls,
+            )
         }
-
-        let res: PyResult<()> = (|| {
-            let out = jacobian.bind(py).call1((x.to_vec(),))?; // <- Bound<'py, PyAny>
-
-            if let Ok(arr) = out.cast::<PyArray2<f64>>() {
-                let shape = arr.shape();
-                if shape.len() != 2 {
-                    return Err(pyo3::exceptions::PyValueError::new_err(
-                        "jacobian must be 2D ndarray",
-                    ));
-                }
-                let (m2, n2) = (shape[0], shape[1]);
-                if m2 * n2 != j_out.len() {
-                    return Err(pyo3::exceptions::PyValueError::new_err(
-                        "jacobian size mismatch",
-                    ));
-                }
-
-                let owned;
-                let arr_c = if arr.is_contiguous() {
-                    arr
-                } else {
-                    owned = arr.to_owned_array().into_pyarray(py);
-                    &owned
-                };
-
-                let slice = unsafe { arr_c.as_slice()? }; // contiguous 前提
-                j_out.copy_from_slice(slice);
-                Ok(())
-            } else {
-                let vec: Vec<f64> = out.extract()?;
-                if vec.len() != j_out.len() {
-                    return Err(pyo3::exceptions::PyValueError::new_err(
-                        "jacobian size mismatch",
-                    ));
-                }
-                j_out.copy_from_slice(&vec);
-                Ok(())
-            }
-        })();
-
-        if let Err(e) = res {
-            *err_cell.borrow_mut() = Some(e);
+        LineSearchMode::Disabled => {
+            let mut ls = NoLineSearch;
+            solver.solve_with_fn(
+                m,
+                x0,
+                &mut residual_fn,
+                &mut jacobian_fn,
+                &mut project_fn,
+                &mut ls,
+            )
+        }
+        LineSearchMode::Custom(obj) => {
+            let mut ls = PyLineSearchPolicy::new(obj, err_state.clone());
+            solver.solve_with_fn(
+                m,
+                x0,
+                &mut residual_fn,
+                &mut jacobian_fn,
+                &mut project_fn,
+                &mut ls,
+            )
         }
     };
-
-    // project(x): optional
-    let mut project_fn = |x: &mut [f64]| {
-        if err_cell.borrow().is_some() {
-            return;
-        }
-        let Some(p) = &project_obj else {
-            return;
-        };
-
-        let res: PyResult<Vec<f64>> = (|| {
-            let out = p.call1(py, (x.to_vec(),))?;
-            out.extract::<Vec<f64>>(py)
-        })();
-
-        match res {
-            Ok(x_new) => {
-                if x_new.len() != x.len() {
-                    *err_cell.borrow_mut() =
-                        Some(pyo3::exceptions::PyValueError::new_err(format!(
-                            "project length mismatch: expected {}, got {}",
-                            x.len(),
-                            x_new.len()
-                        )));
-                    return;
-                }
-                x.copy_from_slice(&x_new);
-            }
-            Err(e) => {
-                *err_cell.borrow_mut() = Some(e);
-            }
-        }
-    };
-
-    let result = solver.solve_with_fn(m, x0, &mut residual_fn, &mut jacobian_fn, &mut project_fn);
 
     // If any python error occurred inside callbacks, raise it
-    if let Some(e) = err_cell.into_inner() {
+    if let Some(e) = err_state.take() {
         return Err(e);
     }
     if let Some(e) = manifold_err.take() {

@@ -1,30 +1,8 @@
 use liteopt_core::manifolds::space::Space;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use std::cell::RefCell;
-use std::rc::Rc;
 
-#[derive(Clone, Default)]
-pub(crate) struct PyCallbackError {
-    inner: Rc<RefCell<Option<PyErr>>>,
-}
-
-impl PyCallbackError {
-    fn set_once(&self, err: PyErr) {
-        let mut slot = self.inner.borrow_mut();
-        if slot.is_none() {
-            *slot = Some(err);
-        }
-    }
-
-    fn has_error(&self) -> bool {
-        self.inner.borrow().is_some()
-    }
-
-    pub(crate) fn take(&self) -> Option<PyErr> {
-        self.inner.borrow_mut().take()
-    }
-}
+use crate::bindings::callbacks::PyErrState;
 
 /// Python-callable manifold adapter for `Vec<f64>` point/tangent spaces.
 ///
@@ -42,15 +20,15 @@ pub(crate) struct PyVecManifold {
     scale: Option<Py<PyAny>>,
     add: Option<Py<PyAny>>,
     difference: Option<Py<PyAny>>,
-    error: PyCallbackError,
+    error: PyErrState,
 }
 
 impl PyVecManifold {
     pub(crate) fn from_python(
         py: Python<'_>,
         manifold: Option<Py<PyAny>>,
-    ) -> PyResult<(Self, PyCallbackError)> {
-        let error = PyCallbackError::default();
+    ) -> PyResult<(Self, PyErrState)> {
+        let error = PyErrState::default();
         let mut space = Self {
             retract: None,
             tangent_norm: None,
