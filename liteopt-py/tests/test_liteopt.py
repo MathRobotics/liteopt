@@ -26,6 +26,18 @@ def quadratic_1d_grad(x):
     return [2.0 * (x0 - 3.0)]
 
 
+GN_TARGET = np.array([1.0, -2.0], dtype=float)
+
+
+def residual_2d(x):
+    x = np.asarray(x, dtype=float)
+    return x - GN_TARGET
+
+
+def jacobian_2d(_x):
+    return np.eye(2, dtype=float)
+
+
 def test_gradient_descent_rosenbrock_converges_and_reduces_objective():
     x0 = [-1.2, 1.0]
     f0 = rosenbrock(x0)
@@ -94,3 +106,72 @@ def test_gradient_descent_step_size_changes_single_step_result():
     x_small = float(np.asarray(x_small, dtype=float)[0])
     x_large = float(np.asarray(x_large, dtype=float)[0])
     assert 0.0 < x_small < x_large < 3.0
+
+
+def test_gradient_descent_supports_custom_line_search_callback():
+    calls = {"n": 0}
+
+    def half_step(ctx):
+        calls["n"] += 1
+        return {"accepted": True, "alpha": 0.5 * float(ctx["alpha0"])}
+
+    x_star, f_star, converged = liteopt.gd(
+        quadratic_1d,
+        quadratic_1d_grad,
+        [0.0],
+        step_size=0.2,
+        max_iters=200,
+        tol_grad=1e-9,
+        line_search=half_step,
+    )
+
+    x_star = float(np.asarray(x_star, dtype=float)[0])
+    assert converged
+    assert abs(x_star - 3.0) < 1e-6
+    assert f_star < 1e-12
+    assert calls["n"] > 0
+
+
+def test_gauss_newton_supports_custom_line_search_callback():
+    calls = {"n": 0}
+
+    def half_step(ctx):
+        calls["n"] += 1
+        return {"accepted": True, "alpha": 0.5 * float(ctx["alpha0"])}
+
+    x_star, cost, _, r_norm, _, ok = liteopt.gn(
+        residual_2d,
+        jacobian_2d,
+        x0=[0.0, 0.0],
+        max_iters=100,
+        tol_r=1e-10,
+        tol_dx=1e-10,
+        line_search=half_step,
+        verbose=False,
+    )
+
+    x_star = np.asarray(x_star, dtype=float)
+    assert ok
+    assert np.allclose(x_star, GN_TARGET, atol=1e-6)
+    assert cost < 1e-12
+    assert r_norm < 1e-6
+    assert calls["n"] > 0
+
+
+def test_gauss_newton_line_search_bool_flag_is_still_supported():
+    x_star, cost, _, r_norm, _, ok = liteopt.gn(
+        residual_2d,
+        jacobian_2d,
+        x0=[0.0, 0.0],
+        max_iters=100,
+        tol_r=1e-10,
+        tol_dx=1e-10,
+        line_search=False,
+        verbose=False,
+    )
+
+    x_star = np.asarray(x_star, dtype=float)
+    assert ok
+    assert np.allclose(x_star, GN_TARGET, atol=1e-6)
+    assert cost < 1e-12
+    assert r_norm < 1e-6
