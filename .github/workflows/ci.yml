@@ -31,7 +31,7 @@ jobs:
         run: uv sync --project liteopt-py --extra dev
 
       - name: Build and install Python bindings
-        run: uv run --project liteopt-py --extra dev maturin develop --manifest-path liteopt-py/Cargo.toml --release
+        run: uv run --project liteopt-py --extra dev --no-sync maturin develop --manifest-path liteopt-py/Cargo.toml --release
 
       - name: Run Python tests
-        run: uv run --project liteopt-py --extra dev pytest liteopt-py/tests
+        run: uv run --project liteopt-py --extra dev --no-sync pytest liteopt-py/tests
