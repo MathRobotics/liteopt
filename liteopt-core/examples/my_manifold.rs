@@ -72,17 +72,13 @@ fn main() {
         max_iters: 20,
         tol_r: 1e-12,
         tol_dq: 1e-12,
-        line_search: true,
-        ls_beta: 0.5,
-        ls_max_steps: 20,
-        c_armijo: 1e-4,
         verbose: false,
     };
 
     let target_angle = 2.8;
     let x0 = vec![3.0 * std::f64::consts::PI];
 
-    let result = solver.solve_with_fn(
+    let result = solver.solve_with_fn_default_line_search(
         1,
         x0,
         |x, r| {

@@ -8,10 +8,6 @@ fn main() {
         max_iters: 20,
         tol_r: 1e-12,
         tol_dq: 1e-12,
-        line_search: true,
-        ls_beta: 0.5,
-        ls_max_steps: 20,
-        c_armijo: 1e-4,
         verbose: false,
     };
 
@@ -26,7 +22,8 @@ fn main() {
         j[2] = 0.0;
         j[3] = 1.0;
     };
-    let result = solver.solve_with_fn(2, vec![0.0, 0.0], residual, jacobian, |_x| {});
+    let result =
+        solver.solve_with_fn_default_line_search(2, vec![0.0, 0.0], residual, jacobian, |_x| {});
     println!(
         "converged={} x*={:?} cost={:.3e}",
         result.converged, result.x, result.cost
