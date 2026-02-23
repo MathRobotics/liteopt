@@ -66,6 +66,25 @@ x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(residual, jacobian, x0=[0.
 print(ok, x_star, cost)
 ```
 
+Gauss-Newton simple loop (fixed damping + strict-decrease line search):
+
+```python
+x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(
+    residual,
+    jacobian,
+    x0=[0.0, 0.0],
+    lambda_=1e-8,
+    damping_update="fixed",
+    linear_system="normal_jtj",
+    line_search_method="strict_decrease",
+    line_search=True,
+    ls_beta=0.5,
+    ls_min_step=1e-8,
+    ls_max_steps=12,
+)
+print(ok, x_star, cost)
+```
+
 Custom line search callback (GN):
 
 ```python

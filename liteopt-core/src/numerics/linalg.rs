@@ -24,6 +24,22 @@ pub fn jj_t_plus_lambda(j: &[f64], m: usize, n: usize, lambda: f64, a: &mut [f64
     }
 }
 
+/// A = J^T J + lambda I, J: (m x n) row-major
+pub fn jt_j_plus_lambda(j: &[f64], m: usize, n: usize, lambda: f64, a: &mut [f64]) {
+    a.fill(0.0);
+    for row in 0..m {
+        for i in 0..n {
+            let jri = j[row * n + i];
+            for k in 0..n {
+                a[i * n + k] += jri * j[row * n + k];
+            }
+        }
+    }
+    for i in 0..n {
+        a[i * n + i] += lambda;
+    }
+}
+
 /// out = J^T v
 pub fn jt_mul_vec(j: &[f64], m: usize, n: usize, v: &[f64], out: &mut [f64]) {
     out.fill(0.0);

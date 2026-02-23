@@ -1,4 +1,8 @@
-use liteopt_core::solvers::gn::{ArmijoBacktracking, GaussNewton, NoLineSearch};
+use liteopt_core::solvers::gn::{
+    GaussNewton, GaussNewtonDampingUpdate, GaussNewtonLineSearchMethod, GaussNewtonLinearSystem,
+    NoLineSearch,
+};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::bindings::callbacks::{PyErrState, PyLeastSquaresCallbacks};
@@ -10,8 +14,9 @@ use crate::bindings::manifold::PyVecManifold;
 /// residual: callable(x: list[float]) -> list[float]           (len = m)
 /// jacobian: callable(x: list[float]) -> list[float]           (len = m*n, row-major)
 /// line_search: bool or callable(ctx: dict) -> alpha or (accepted, alpha)
-/// manifold: optional object with callbacks such as
-///   retract(x, direction, alpha) and tangent_norm(v)
+/// damping_update: "adaptive" or "fixed"
+/// linear_system: "left_jjt" or "normal_jtj"
+/// line_search_method: "armijo", "strict_decrease", or "none"
 #[pyfunction(
     signature = (
         residual,
@@ -23,8 +28,12 @@ use crate::bindings::manifold::PyVecManifold;
         max_iters = None,
         tol_r = None,
         tol_dx = None,
+        damping_update = None,
+        linear_system = None,
+        line_search_method = None,
         line_search = None,
         ls_beta = None,
+        ls_min_step = None,
         ls_max_steps = None,
         c_armijo = None,
         verbose = None,
@@ -42,18 +51,105 @@ fn gn(
     max_iters: Option<usize>,
     tol_r: Option<f64>,
     tol_dx: Option<f64>,
+    damping_update: Option<String>,
+    linear_system: Option<String>,
+    line_search_method: Option<String>,
     line_search: Option<Py<PyAny>>,
     ls_beta: Option<f64>,
+    ls_min_step: Option<f64>,
     ls_max_steps: Option<usize>,
     c_armijo: Option<f64>,
     verbose: Option<bool>,
     manifold: Option<Py<PyAny>>,
 ) -> PyResult<(Vec<f64>, f64, usize, f64, f64, bool)> {
+    let lambda = lambda_.unwrap_or(1e-3);
+    if !lambda.is_finite() || lambda < 0.0 {
+        return Err(PyValueError::new_err(format!(
+            "gn: lambda_ must be finite and >= 0, got {lambda}"
+        )));
+    }
+
+    let ls_beta = ls_beta.unwrap_or(0.5);
+    if !ls_beta.is_finite() || !(0.0 < ls_beta && ls_beta < 1.0) {
+        return Err(PyValueError::new_err(format!(
+            "gn: ls_beta must be finite and in (0,1), got {ls_beta}"
+        )));
+    }
+    let ls_min_step = ls_min_step.unwrap_or(1e-8);
+    if !ls_min_step.is_finite() || ls_min_step <= 0.0 {
+        return Err(PyValueError::new_err(format!(
+            "gn: ls_min_step must be finite and > 0, got {ls_min_step}"
+        )));
+    }
+    let ls_max_steps = ls_max_steps.unwrap_or(20);
+    if ls_max_steps == 0 {
+        return Err(PyValueError::new_err("gn: ls_max_steps must be > 0"));
+    }
+    let c_armijo = c_armijo.unwrap_or(1e-4);
+    if !c_armijo.is_finite() {
+        return Err(PyValueError::new_err(format!(
+            "gn: c_armijo must be finite, got {c_armijo}"
+        )));
+    }
+
+    let damping_update = match damping_update.as_deref().unwrap_or("adaptive") {
+        "adaptive" => GaussNewtonDampingUpdate::Adaptive,
+        "fixed" => GaussNewtonDampingUpdate::Fixed,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "gn: damping_update must be 'adaptive' or 'fixed', got '{other}'"
+            )));
+        }
+    };
+
+    let linear_system = match linear_system.as_deref().unwrap_or("left_jjt") {
+        "left_jjt" => GaussNewtonLinearSystem::LeftJjT,
+        "normal_jtj" => GaussNewtonLinearSystem::NormalJtJ,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "gn: linear_system must be 'left_jjt' or 'normal_jtj', got '{other}'"
+            )));
+        }
+    };
+
+    let line_search_method = match line_search_method.as_deref().unwrap_or("armijo") {
+        "armijo" => GaussNewtonLineSearchMethod::Armijo,
+        "strict_decrease" => GaussNewtonLineSearchMethod::StrictDecrease,
+        "none" => GaussNewtonLineSearchMethod::None,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "gn: line_search_method must be 'armijo', 'strict_decrease', or 'none', got '{other}'"
+            )));
+        }
+    };
+
+    enum RunMode {
+        Configured,
+        Disabled,
+        Custom(Py<PyAny>),
+    }
+
+    let run_mode = match line_search {
+        None => RunMode::Configured,
+        Some(obj) => match obj.bind(py).extract::<bool>() {
+            Ok(true) => RunMode::Configured,
+            Ok(false) => RunMode::Disabled,
+            Err(_) => RunMode::Custom(obj),
+        },
+    };
+
     let (space, manifold_err) = PyVecManifold::from_python(py, manifold)?;
     let solver = GaussNewton {
         space,
-        lambda: lambda_.unwrap_or(1e-3),
+        lambda,
+        damping_update,
+        linear_system,
+        line_search_method,
         step_scale: step_scale.unwrap_or(1.0),
+        ls_beta,
+        ls_min_step,
+        ls_max_steps,
+        c_armijo,
         max_iters: max_iters.unwrap_or(100),
         tol_r: tol_r.unwrap_or(1e-6),
         tol_dq: tol_dx.unwrap_or(1e-6),
@@ -68,38 +164,15 @@ fn gn(
     let mut jacobian_fn = |x: &[f64], j_out: &mut [f64]| callbacks.jacobian_into(py, x, j_out);
     let mut project_fn = |x: &mut [f64]| callbacks.project_in_place(py, x);
 
-    enum LineSearchMode {
-        Armijo,
-        Disabled,
-        Custom(Py<PyAny>),
-    }
-
-    let line_search_mode = match line_search {
-        None => LineSearchMode::Armijo,
-        Some(obj) => match obj.bind(py).extract::<bool>() {
-            Ok(true) => LineSearchMode::Armijo,
-            Ok(false) => LineSearchMode::Disabled,
-            Err(_) => LineSearchMode::Custom(obj),
-        },
-    };
-
-    let result = match line_search_mode {
-        LineSearchMode::Armijo => {
-            let mut ls = ArmijoBacktracking::new(
-                ls_beta.unwrap_or(0.5),
-                ls_max_steps.unwrap_or(20),
-                c_armijo.unwrap_or(1e-4),
-            );
-            solver.solve_with_fn(
-                m,
-                x0,
-                &mut residual_fn,
-                &mut jacobian_fn,
-                &mut project_fn,
-                &mut ls,
-            )
-        }
-        LineSearchMode::Disabled => {
+    let result = match run_mode {
+        RunMode::Configured => solver.solve_with_fn_default_line_search(
+            m,
+            x0,
+            &mut residual_fn,
+            &mut jacobian_fn,
+            &mut project_fn,
+        ),
+        RunMode::Disabled => {
             let mut ls = NoLineSearch;
             solver.solve_with_fn(
                 m,
@@ -110,7 +183,7 @@ fn gn(
                 &mut ls,
             )
         }
-        LineSearchMode::Custom(obj) => {
+        RunMode::Custom(obj) => {
             let mut ls = PyLineSearchPolicy::new(obj, err_state.clone());
             solver.solve_with_fn(
                 m,
@@ -123,7 +196,6 @@ fn gn(
         }
     };
 
-    // If any python error occurred inside callbacks, raise it
     if let Some(e) = err_state.take() {
         return Err(e);
     }

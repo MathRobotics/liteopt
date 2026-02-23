@@ -134,6 +134,36 @@ let res = solver.solve_with_fn(
 println!("{:?}", res.x);
 ```
 
+Rust (Gauss-Newton simple loop mode):
+
+```rust
+use liteopt::solvers::gn::{
+    GaussNewton, GaussNewtonDampingUpdate, GaussNewtonLineSearchMethod, GaussNewtonLinearSystem,
+};
+
+let solver = GaussNewton {
+    lambda: 1e-8,
+    damping_update: GaussNewtonDampingUpdate::Fixed,
+    linear_system: GaussNewtonLinearSystem::NormalJtJ,
+    line_search_method: GaussNewtonLineSearchMethod::StrictDecrease,
+    ls_beta: 0.5,
+    ls_min_step: 1e-8,
+    ls_max_steps: 12,
+    max_iters: 20,
+    tol_r: 1e-10,
+    tol_dq: 1e-12,
+    ..Default::default()
+};
+let res = solver.solve_with_fn_default_line_search(
+    2,
+    vec![0.0, 0.0],
+    |x, r| { r[0] = x[0] - 1.0; r[1] = x[1] + 2.0; },
+    |_x, j| { j[0] = 1.0; j[1] = 0.0; j[2] = 0.0; j[3] = 1.0; },
+    |_x| {},
+);
+println!("converged={} x={:?}", res.converged, res.x);
+```
+
 Python examples are in `liteopt-py/README.md`.
 
 Bundled Rust examples in `liteopt-core/examples/` can be run with:
@@ -176,6 +206,7 @@ cargo run -p liteopt --example custom_line_search
 - Custom manifold sample: `liteopt-core/tests/gn.rs` (`MyManifold`)
 - Gauss-Newton solver import: `liteopt::solvers::gn::GaussNewton`
 - Custom line search for Gauss-Newton: implement `liteopt::solvers::gn::LineSearchPolicy`
+- GN algorithm selection: `damping_update`, `linear_system`, `line_search_method`
 - LM solver import: `liteopt::solvers::lm::LevenbergMarquardt`
 - Sample objective import: `liteopt::problems::test_functions::{Quadratic, Rosenbrock}`
 - Python custom manifold callbacks: see `liteopt-py/README.md`

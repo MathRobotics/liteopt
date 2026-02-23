@@ -5,6 +5,9 @@ mod workspace;
 
 pub use line_search::{
     ArmijoBacktracking, CostDecrease, LineSearchContext, LineSearchPolicy, LineSearchResult,
-    NoLineSearch,
+    NoLineSearch, StrictDecreaseBacktracking,
 };
-pub use types::{GaussNewton, GaussNewtonResult};
+pub use types::{
+    GaussNewton, GaussNewtonDampingUpdate, GaussNewtonLineSearchMethod, GaussNewtonLinearSystem,
+    GaussNewtonResult,
+};

@@ -1,7 +1,8 @@
 pub(super) struct GaussNewtonWorkspace {
     pub(super) r: Vec<f64>,
-    pub(super) j: Vec<f64>, // row-major (m x n)
-    pub(super) a: Vec<f64>, // A = J J^T + lambda I, shape (m x m)
+    pub(super) j: Vec<f64>,  // row-major (m x n)
+    pub(super) a: Vec<f64>,  // A = J J^T + lambda I, shape (m x m)
+    pub(super) an: Vec<f64>, // A = J^T J + lambda I, shape (n x n)
     pub(super) y: Vec<f64>,
     pub(super) dx: Vec<f64>,
     pub(super) g: Vec<f64>,
@@ -16,6 +17,7 @@ impl GaussNewtonWorkspace {
             r: vec![0.0f64; m],
             j: vec![0.0f64; m * n],
             a: vec![0.0f64; m * m],
+            an: vec![0.0f64; n * n],
             y: vec![0.0f64; m],
             dx: vec![0.0f64; n],
             g: vec![0.0f64; n],

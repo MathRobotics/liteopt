@@ -175,3 +175,65 @@ def test_gauss_newton_line_search_bool_flag_is_still_supported():
     assert np.allclose(x_star, GN_TARGET, atol=1e-6)
     assert cost < 1e-12
     assert r_norm < 1e-6
+
+
+def test_gauss_newton_mode_simple_converges():
+    x_star, cost, _, r_norm, _, ok = liteopt.gn(
+        residual_2d,
+        jacobian_2d,
+        x0=[0.0, 0.0],
+        damping_update="fixed",
+        linear_system="normal_jtj",
+        line_search_method="strict_decrease",
+        lambda_=1e-8,
+        max_iters=100,
+        tol_r=1e-10,
+        tol_dx=1e-10,
+        line_search=True,
+        ls_beta=0.5,
+        ls_min_step=1e-8,
+        ls_max_steps=12,
+        verbose=False,
+    )
+
+    x_star = np.asarray(x_star, dtype=float)
+    assert ok
+    assert np.allclose(x_star, GN_TARGET, atol=1e-6)
+    assert cost < 1e-12
+    assert r_norm < 1e-6
+
+
+def test_gauss_newton_mode_simple_reports_non_converged_when_no_improving_step_exists():
+    def residual_const(_x):
+        return [1.0]
+
+    def jacobian_zero(_x):
+        return [0.0]
+
+    _, cost, _, r_norm, step_norm, ok = liteopt.gn(
+        residual_const,
+        jacobian_zero,
+        x0=[0.0],
+        damping_update="fixed",
+        linear_system="normal_jtj",
+        line_search_method="strict_decrease",
+        lambda_=1e-6,
+        tol_dx=0.0,
+        line_search=True,
+        verbose=False,
+    )
+
+    assert not ok
+    assert cost > 0.0
+    assert r_norm > 0.0
+    assert step_norm == 0.0
+
+
+def test_gauss_newton_mode_simple_rejects_invalid_line_search_parameters():
+    with pytest.raises(ValueError, match="ls_beta"):
+        liteopt.gn(
+            residual_2d,
+            jacobian_2d,
+            x0=[0.0, 0.0],
+            ls_beta=1.2,
+        )

@@ -2,7 +2,9 @@ use liteopt::{
     manifolds::{space::Space, EuclideanSpace},
     problems::least_squares::LeastSquaresProblem,
     solvers::gn::{
-        GaussNewton, LineSearchContext, LineSearchPolicy, LineSearchResult, NoLineSearch,
+        GaussNewton, GaussNewtonDampingUpdate, GaussNewtonLineSearchMethod,
+        GaussNewtonLinearSystem, LineSearchContext, LineSearchPolicy, LineSearchResult,
+        NoLineSearch,
     },
 };
 
@@ -130,15 +132,12 @@ fn gauss_newton_solver<S>(space: S, max_iters: usize) -> GaussNewton<S>
 where
     S: Space<Point = Vec<f64>, Tangent = Vec<f64>>,
 {
-    GaussNewton {
-        space,
-        lambda: 1e-3,
-        step_scale: 1.0,
-        max_iters,
-        tol_r: 1e-9,
-        tol_dq: 1e-12,
-        verbose: false,
-    }
+    let mut solver = GaussNewton::with_space(space);
+    solver.lambda = 1e-3;
+    solver.max_iters = max_iters;
+    solver.tol_r = 1e-9;
+    solver.tol_dq = 1e-12;
+    solver
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -352,4 +351,73 @@ fn gauss_newton_behavior_default_uses_euclidean_space() {
         solver.solve_with_fn_default_line_search(1, vec![0.0], residual_fn, jacobian_fn, project);
     assert!(res.converged, "default solver should converge: {:?}", res);
     assert!((res.x[0] - 2.0).abs() < 1e-6);
+}
+
+#[test]
+fn gauss_newton_simple_behavior_converges_on_planar_two_link_problem() {
+    let problem = planar_two_link_problem();
+    let mut solver = gauss_newton_solver(EuclideanSpace, 200);
+    solver.linear_system = GaussNewtonLinearSystem::NormalJtJ;
+    solver.damping_update = GaussNewtonDampingUpdate::Fixed;
+    solver.line_search_method = GaussNewtonLineSearchMethod::StrictDecrease;
+    solver.lambda = 1e-8;
+    solver.max_iters = 200;
+    solver.tol_r = 1e-10;
+    solver.tol_dq = 1e-10;
+    solver.ls_beta = 0.5;
+    solver.ls_min_step = 1e-8;
+    solver.ls_max_steps = 12;
+    let res = solver.solve_with_default_line_search(vec![0.0, 0.0], &problem);
+
+    assert!(res.converged, "did not converge: {:?}", res);
+    assert!(res.r_norm < 1e-6, "residual too large: {}", res.r_norm);
+}
+
+#[test]
+fn gauss_newton_simple_behavior_supports_disabling_line_search() {
+    let problem = planar_two_link_problem();
+    let mut solver = gauss_newton_solver(EuclideanSpace, 200);
+    solver.linear_system = GaussNewtonLinearSystem::NormalJtJ;
+    solver.damping_update = GaussNewtonDampingUpdate::Fixed;
+    solver.line_search_method = GaussNewtonLineSearchMethod::None;
+    solver.lambda = 1e-8;
+    solver.max_iters = 200;
+    solver.tol_r = 1e-10;
+    solver.tol_dq = 1e-10;
+    let res = solver.solve_with_default_line_search(vec![0.0, 0.0], &problem);
+
+    assert!(res.converged, "did not converge: {:?}", res);
+    assert!(res.cost < 1e-8, "cost too large: {}", res.cost);
+}
+
+#[test]
+fn gauss_newton_simple_behavior_reports_stalled_for_non_improving_step() {
+    let mut solver = gauss_newton_solver(EuclideanSpace, 20);
+    solver.linear_system = GaussNewtonLinearSystem::NormalJtJ;
+    solver.damping_update = GaussNewtonDampingUpdate::Fixed;
+    solver.line_search_method = GaussNewtonLineSearchMethod::StrictDecrease;
+    solver.lambda = 1e-6;
+    solver.tol_dq = 0.0;
+    solver.ls_beta = 0.5;
+    solver.ls_min_step = 1e-8;
+    solver.ls_max_steps = 12;
+
+    let res = solver.solve_with_fn_default_line_search(
+        1,
+        vec![0.0],
+        |_x, r| {
+            r[0] = 1.0;
+        },
+        |_x, j| {
+            j[0] = 0.0;
+        },
+        |_x| {},
+    );
+
+    assert!(
+        !res.converged,
+        "stalled case should be non-converged: {:?}",
+        res
+    );
+    assert_eq!(res.dx_norm, 0.0);
 }

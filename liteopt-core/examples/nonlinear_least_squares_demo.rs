@@ -3,12 +3,10 @@ use liteopt::{manifolds::EuclideanSpace, solvers::gn::GaussNewton};
 fn main() {
     let solver = GaussNewton {
         space: EuclideanSpace,
-        lambda: 1e-3,
-        step_scale: 1.0,
         max_iters: 20,
         tol_r: 1e-12,
         tol_dq: 1e-12,
-        verbose: false,
+        ..Default::default()
     };
 
     let target = [1.0, -2.0];

@@ -1,9 +1,17 @@
 use crate::manifolds::space::Space;
-use crate::numerics::linalg::{dot, jj_t_plus_lambda, jt_mul_vec, norm2, solve_linear_inplace};
+use crate::numerics::linalg::{
+    dot, jj_t_plus_lambda, jt_j_plus_lambda, jt_mul_vec, norm2, solve_linear_inplace,
+};
 use crate::problems::least_squares::LeastSquaresProblem;
 
-use super::line_search::{ArmijoBacktracking, LineSearchContext, LineSearchPolicy};
-use super::types::{DirectionResult, GaussNewton, GaussNewtonResult};
+use super::line_search::{
+    ArmijoBacktracking, LineSearchContext, LineSearchPolicy, NoLineSearch,
+    StrictDecreaseBacktracking,
+};
+use super::types::{
+    DirectionResult, GaussNewton, GaussNewtonDampingUpdate, GaussNewtonLineSearchMethod,
+    GaussNewtonLinearSystem, GaussNewtonResult,
+};
 use super::workspace::GaussNewtonWorkspace;
 
 impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
@@ -22,35 +30,50 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
     {
         jacobian_fn(x, &mut ws.j);
 
-        // A = J J^T + lambda I
-        jj_t_plus_lambda(&ws.j, m, n, lambda, &mut ws.a);
+        match self.linear_system {
+            GaussNewtonLinearSystem::LeftJjT => {
+                // A = J J^T + lambda I
+                jj_t_plus_lambda(&ws.j, m, n, lambda, &mut ws.a);
 
-        // y = A^{-1} r
-        ws.y.copy_from_slice(&ws.r);
-        if !solve_linear_inplace(&mut ws.a, &mut ws.y, m) {
-            return None;
+                // y = A^{-1} r
+                ws.y.copy_from_slice(&ws.r);
+                if !solve_linear_inplace(&mut ws.a, &mut ws.y, m) {
+                    return None;
+                }
+
+                // dx = -J^T y
+                jt_mul_vec(&ws.j, m, n, &ws.y, &mut ws.dx);
+                for v in &mut ws.dx {
+                    *v = -*v;
+                }
+            }
+            GaussNewtonLinearSystem::NormalJtJ => {
+                // A = J^T J + lambda I
+                jt_j_plus_lambda(&ws.j, m, n, lambda, &mut ws.an);
+
+                // rhs = -J^T r
+                jt_mul_vec(&ws.j, m, n, &ws.r, &mut ws.dx);
+                for v in &mut ws.dx {
+                    *v = -*v;
+                }
+                if !solve_linear_inplace(&mut ws.an, &mut ws.dx, n) {
+                    return None;
+                }
+            }
         }
 
-        // dx = -J^T y
-        jt_mul_vec(&ws.j, m, n, &ws.y, &mut ws.dx);
-        for v in &mut ws.dx {
-            *v = -*v;
-        }
         let mut dx_norm = self.space.tangent_norm(&ws.dx);
 
         if !need_dphi0 {
             return Some(DirectionResult {
                 dx_norm,
                 dphi0: None,
-                used_steepest_descent: false,
             });
         }
 
-        // g = J^T r  (gradient of 0.5||r||^2)
+        // g = J^T r (gradient of 0.5||r||^2)
         jt_mul_vec(&ws.j, m, n, &ws.r, &mut ws.g);
         let mut dphi0 = dot(&ws.g, &ws.dx);
-        let mut used_steepest_descent = false;
-
         // Fallback if not descent (or NaN/Inf): dx = -g
         if !dphi0.is_finite() || dphi0 >= 0.0 {
             for i in 0..n {
@@ -58,13 +81,11 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
             }
             dx_norm = self.space.tangent_norm(&ws.dx);
             dphi0 = dot(&ws.g, &ws.dx);
-            used_steepest_descent = true;
         }
 
         Some(DirectionResult {
             dx_norm,
             dphi0: Some(dphi0),
-            used_steepest_descent,
         })
     }
 
@@ -80,7 +101,6 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         R: FnMut(&[f64], &mut [f64]),
         P: FnMut(&mut [f64]),
     {
-        // x_trial = Retr_x(alpha * dx)
         self.space
             .retract_into(&mut ws.x_trial, x, &ws.dx, alpha, &mut ws.tmp);
         project(&mut ws.x_trial);
@@ -104,6 +124,65 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         *r_norm = norm2(&ws.r);
     }
 
+    fn configured_armijo(&self) -> ArmijoBacktracking {
+        let beta = if self.ls_beta.is_finite() && (0.0..1.0).contains(&self.ls_beta) {
+            self.ls_beta
+        } else {
+            0.5
+        };
+        let max_steps = self.ls_max_steps.max(1);
+        let c_armijo = if self.c_armijo.is_finite() {
+            self.c_armijo
+        } else {
+            1e-4
+        };
+        ArmijoBacktracking::new(beta, max_steps, c_armijo)
+    }
+
+    fn configured_strict_decrease(&self) -> StrictDecreaseBacktracking {
+        let beta = if self.ls_beta.is_finite() && (0.0..1.0).contains(&self.ls_beta) {
+            self.ls_beta
+        } else {
+            0.5
+        };
+        let min_step = if self.ls_min_step.is_finite() && self.ls_min_step > 0.0 {
+            self.ls_min_step
+        } else {
+            1e-8
+        };
+        let max_steps = self.ls_max_steps.max(1);
+        StrictDecreaseBacktracking::new(beta, min_step, max_steps)
+    }
+
+    fn run_with_configured_line_search<R, JF, P>(
+        &self,
+        m: usize,
+        x: Vec<f64>,
+        residual_fn: R,
+        jacobian_fn: JF,
+        project: P,
+    ) -> GaussNewtonResult<Vec<f64>>
+    where
+        R: FnMut(&[f64], &mut [f64]),
+        JF: FnMut(&[f64], &mut [f64]),
+        P: FnMut(&mut [f64]),
+    {
+        match self.line_search_method {
+            GaussNewtonLineSearchMethod::Armijo => {
+                let mut line_search = self.configured_armijo();
+                self.run_with_line_search(m, x, residual_fn, jacobian_fn, project, &mut line_search)
+            }
+            GaussNewtonLineSearchMethod::StrictDecrease => {
+                let mut line_search = self.configured_strict_decrease();
+                self.run_with_line_search(m, x, residual_fn, jacobian_fn, project, &mut line_search)
+            }
+            GaussNewtonLineSearchMethod::None => {
+                let mut line_search = NoLineSearch;
+                self.run_with_line_search(m, x, residual_fn, jacobian_fn, project, &mut line_search)
+            }
+        }
+    }
+
     fn run_with_line_search<R, JF, P, LS>(
         &self,
         m: usize,
@@ -122,39 +201,15 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         let n = x.len();
         assert!(m > 0 && n > 0);
 
-        // LM damping is mutable locally.
         let mut lambda = self.lambda;
         let mut ws = GaussNewtonWorkspace::new(m, n);
 
-        // initial
         residual_fn(&x, &mut ws.r);
         let mut cost = 0.5 * dot(&ws.r, &ws.r);
         let mut r_norm = norm2(&ws.r);
 
-        if self.verbose {
-            println!("[gn] debug columns:");
-            println!("  iter   : iteration index (0-based)");
-            println!("  cost   : 0.5 * ||r(x)||^2");
-            println!("  r      : ||r(x)|| (residual norm)");
-            println!("  dx     : ||dx|| (step direction norm; after fallback if applied)");
-            println!("  alpha  : step size used in retract (after backtracking)");
-            println!("  lambda : LM damping (bigger => more conservative step)");
-            println!("  note   : state tag (initial/accepted/rejected/...)");
-            println!(
-                "[gn] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | note initial",
-                0, cost, r_norm
-            );
-        }
-
         for it in 0..self.max_iters {
-            // Stop by residual norm
             if r_norm <= self.tol_r {
-                if self.verbose {
-                    println!(
-                        "[gn] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | stop r_norm",
-                        it, cost, r_norm, 0.0
-                    );
-                }
                 return GaussNewtonResult {
                     x,
                     cost,
@@ -176,34 +231,25 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
             );
 
             let Some(direction) = direction else {
-                // LM-style recovery: increase lambda and retry SAME iteration
-                lambda *= 10.0;
-                if self.verbose {
-                    println!(
-                        "[gn] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | note linear_solve_failed -> increase lambda {:>9.3e}",
-                        it, cost, r_norm, lambda
-                    );
+                if self.damping_update == GaussNewtonDampingUpdate::Adaptive {
+                    lambda *= 10.0;
+                    continue;
                 }
-                continue;
+                return GaussNewtonResult {
+                    x,
+                    cost,
+                    iters: it,
+                    r_norm,
+                    dx_norm: 0.0,
+                    converged: false,
+                };
             };
 
             let dx_norm = direction.dx_norm;
-            let dphi0 = direction.dphi0;
-            if direction.used_steepest_descent && self.verbose {
-                println!(
-                    "[gn] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | note fallback_to_steepest_descent dphi0={:>13.6e}",
-                    it, cost, r_norm, dphi0.unwrap_or(f64::NAN)
-                );
-            }
-
-            // Stop by step norm (after possible fallback)
-            if dx_norm <= self.tol_dq {
-                if self.verbose {
-                    println!(
-                        "[gn] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | stop dx_norm",
-                        it, cost, r_norm, dx_norm
-                    );
-                }
+            let skip_pre_step_dx_stop = self.line_search_method
+                == GaussNewtonLineSearchMethod::StrictDecrease
+                && !line_search.requires_directional_derivative();
+            if dx_norm <= self.tol_dq && !skip_pre_step_dx_stop {
                 return GaussNewtonResult {
                     x,
                     cost,
@@ -214,15 +260,8 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
                 };
             }
 
-            // step scale alpha
-            let alpha = self.step_scale.clamp(0.0, 1.0);
-            if alpha == 0.0 {
-                if self.verbose {
-                    println!(
-                        "[gn] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | note step_scale_zero",
-                        it, cost, r_norm, dx_norm
-                    );
-                }
+            let alpha0 = self.step_scale.clamp(0.0, 1.0);
+            if alpha0 == 0.0 {
                 return GaussNewtonResult {
                     x,
                     cost,
@@ -235,9 +274,9 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
 
             let ls_ctx = LineSearchContext {
                 iter: it,
-                alpha0: alpha,
+                alpha0,
                 cost0: cost,
-                dphi0,
+                dphi0: direction.dphi0,
                 dx_norm,
                 lambda,
             };
@@ -246,51 +285,43 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
             };
             let ls = line_search.search(&ls_ctx, &mut eval_cost);
 
-            if self.verbose {
-                if ls.accepted {
-                    println!(
-                        "[gn] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | alpha {:>8.3e} | lambda {:>9.3e} | note accepted",
-                        it, cost, r_norm, dx_norm, ls.alpha, lambda
-                    );
-                } else {
-                    println!(
-                        "[gn] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | alpha {:>8.3e} | lambda {:>9.3e} | note rejected",
-                        it, cost, r_norm, dx_norm, ls.alpha, lambda
-                    );
-                }
-            }
-
             if !ls.accepted {
-                // LM-style recovery: increase lambda and retry SAME iteration
-                lambda *= 10.0;
-                if self.verbose {
-                    println!(
-                        "[gn] iter {:>6} | note rejected -> increase lambda {:>9.3e} and retry",
-                        it, lambda
-                    );
+                if self.damping_update == GaussNewtonDampingUpdate::Adaptive {
+                    lambda *= 10.0;
+                    continue;
                 }
-                continue;
+                return GaussNewtonResult {
+                    x,
+                    cost,
+                    iters: it,
+                    r_norm,
+                    dx_norm: 0.0,
+                    converged: false,
+                };
             }
 
             let cost_trial =
                 self.evaluate_trial(&x, ls.alpha, &mut residual_fn, &mut project, &mut ws);
-
             let Some(cost_trial) = cost_trial else {
-                lambda *= 10.0;
-                if self.verbose {
-                    println!(
-                        "[gn] iter {:>6} | note accepted_step_invalid -> increase lambda {:>9.3e} and retry",
-                        it, lambda
-                    );
+                if self.damping_update == GaussNewtonDampingUpdate::Adaptive {
+                    lambda *= 10.0;
+                    continue;
                 }
-                continue;
+                return GaussNewtonResult {
+                    x,
+                    cost,
+                    iters: it,
+                    r_norm,
+                    dx_norm: 0.0,
+                    converged: false,
+                };
             };
 
             self.commit_trial_step(&mut x, &mut cost, &mut r_norm, cost_trial, &mut ws);
 
-            // Optional: relax damping a bit after a successful iteration.
-            // This prevents lambda from staying huge forever.
-            lambda = (0.5 * lambda).max(self.lambda);
+            if self.damping_update == GaussNewtonDampingUpdate::Adaptive {
+                lambda = (0.5 * lambda).max(self.lambda);
+            }
         }
 
         GaussNewtonResult {
@@ -327,13 +358,12 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
 
     /// Solve with an explicit line search policy.
     ///
-    /// - m: residual dimension (e.g. 2 for 2D position, 3 for 3D position, 6 for SE(3) pose error)
+    /// - m: residual dimension
     /// - x: initial guess (len = n)
     /// - residual_fn(x, r): fill r (len = m)
-    /// - jacobian_fn(x, J): fill local Jacobian wrt the update vector at x
-    ///   (len = m*n, row-major, i-th row and k-th col => J[i*n+k])
-    /// - project(x): optional projection (joint limits etc). If not needed, pass |x| {}
-    /// - line_search: step size policy
+    /// - jacobian_fn(x, J): fill Jacobian (len = m*n, row-major)
+    /// - project(x): optional projection
+    /// - line_search: external step-size policy
     pub fn solve_with_fn<R, JF, P, LS>(
         &self,
         m: usize,
@@ -352,7 +382,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         self.run_with_line_search(m, x, residual_fn, jacobian_fn, project, line_search)
     }
 
-    /// Solve using default Armijo backtracking line search settings.
+    /// Solve using the configured line-search method on the solver.
     pub fn solve_with_default_line_search<P>(
         &self,
         x: Vec<f64>,
@@ -361,11 +391,17 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
     where
         P: LeastSquaresProblem<S>,
     {
-        let mut line_search = ArmijoBacktracking::default();
-        self.solve(x, problem, &mut line_search)
+        let m = problem.residual_dim();
+        self.run_with_configured_line_search(
+            m,
+            x,
+            |x, r| problem.residual(x, r),
+            |x, j| problem.jacobian(x, j),
+            |x| problem.project(x),
+        )
     }
 
-    /// Solve callbacks using default Armijo backtracking line search settings.
+    /// Callback variant of [`solve_with_default_line_search`].
     pub fn solve_with_fn_default_line_search<R, JF, P>(
         &self,
         m: usize,
@@ -379,7 +415,6 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         JF: FnMut(&[f64], &mut [f64]),
         P: FnMut(&mut [f64]),
     {
-        let mut line_search = ArmijoBacktracking::default();
-        self.solve_with_fn(m, x, residual_fn, jacobian_fn, project, &mut line_search)
+        self.run_with_configured_line_search(m, x, residual_fn, jacobian_fn, project)
     }
 }

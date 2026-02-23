@@ -65,15 +65,11 @@ impl Space for MyManifold {
 }
 
 fn main() {
-    let solver = GaussNewton {
-        space: MyManifold,
-        lambda: 1e-3,
-        step_scale: 1.0,
-        max_iters: 20,
-        tol_r: 1e-12,
-        tol_dq: 1e-12,
-        verbose: false,
-    };
+    let mut solver = GaussNewton::with_space(MyManifold);
+    solver.lambda = 1e-3;
+    solver.max_iters = 20;
+    solver.tol_r = 1e-12;
+    solver.tol_dq = 1e-12;
 
     let target_angle = 2.8;
     let x0 = vec![3.0 * std::f64::consts::PI];
