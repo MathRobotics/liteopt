@@ -1,6 +1,9 @@
 use liteopt::{
-    manifolds::EuclideanSpace, problems::least_squares::LeastSquaresProblem,
-    solvers::lm::LevenbergMarquardt,
+    manifolds::EuclideanSpace,
+    problems::least_squares::LeastSquaresProblem,
+    solvers::lm::{
+        CostDecrease, LevenbergMarquardt, LineSearchContext, LineSearchPolicy, LineSearchResult,
+    },
 };
 
 struct Planar2LinkProblem {
@@ -83,7 +86,7 @@ fn levenberg_marquardt_behavior_converges_on_planar_two_link_problem() {
 
     let q0 = vec![0.0, 0.0];
     let initial_err = target_error_norm(&problem, &q0);
-    let res = solver.solve(q0, &problem);
+    let res = solver.solve_with_default_line_search(q0, &problem);
     let final_err = target_error_norm(&problem, &res.x);
 
     assert!(res.converged, "did not converge: {:?}", res);
@@ -101,7 +104,8 @@ fn levenberg_marquardt_behavior_converges_on_planar_two_link_problem() {
 #[test]
 fn levenberg_marquardt_behavior_stops_after_maximum_iterations() {
     let problem = planar_two_link_problem();
-    let short = levenberg_marquardt_solver(1).solve(vec![0.0, 0.0], &problem);
+    let short =
+        levenberg_marquardt_solver(1).solve_with_default_line_search(vec![0.0, 0.0], &problem);
 
     assert!(
         !short.converged,
@@ -114,8 +118,10 @@ fn levenberg_marquardt_behavior_stops_after_maximum_iterations() {
 #[test]
 fn levenberg_marquardt_behavior_longer_run_reduces_cost_more_than_short_run() {
     let problem = planar_two_link_problem();
-    let short = levenberg_marquardt_solver(1).solve(vec![0.0, 0.0], &problem);
-    let full = levenberg_marquardt_solver(200).solve(vec![0.0, 0.0], &problem);
+    let short =
+        levenberg_marquardt_solver(1).solve_with_default_line_search(vec![0.0, 0.0], &problem);
+    let full =
+        levenberg_marquardt_solver(200).solve_with_default_line_search(vec![0.0, 0.0], &problem);
 
     assert!(full.converged, "full run should converge: {:?}", full);
     assert!(full.iters <= 200);
@@ -142,7 +148,8 @@ fn levenberg_marquardt_behavior_stops_after_repeated_linear_solve_failure() {
 
     let project = |_x: &mut [f64]| {};
     let x0 = vec![0.0];
-    let res = solver.solve_with_fn(1, x0, residual_fn, jacobian_fn, project);
+    let mut line_search = CostDecrease;
+    let res = solver.solve_with_fn(1, x0, residual_fn, jacobian_fn, project, &mut line_search);
 
     assert!(
         !res.converged,
@@ -164,7 +171,38 @@ fn levenberg_marquardt_behavior_default_uses_euclidean_space() {
     };
     let project = |_x: &mut [f64]| {};
 
-    let res = solver.solve_with_fn(1, vec![0.0], residual_fn, jacobian_fn, project);
+    let res =
+        solver.solve_with_fn_default_line_search(1, vec![0.0], residual_fn, jacobian_fn, project);
     assert!(res.converged, "default solver should converge: {:?}", res);
     assert!((res.x[0] - 2.0).abs() < 1e-6);
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct FixedHalfStepSearch;
+
+impl LineSearchPolicy for FixedHalfStepSearch {
+    fn search(
+        &mut self,
+        ctx: &LineSearchContext,
+        eval_cost: &mut dyn FnMut(f64) -> Option<f64>,
+    ) -> LineSearchResult {
+        let alpha = 0.5 * ctx.alpha0;
+        let accepted = eval_cost(alpha)
+            .map(|cost_trial| cost_trial < ctx.cost0)
+            .unwrap_or(false);
+        LineSearchResult { accepted, alpha }
+    }
+}
+
+#[test]
+fn levenberg_marquardt_behavior_supports_custom_step_policy() {
+    let solver = levenberg_marquardt_solver(200);
+    let problem = planar_two_link_problem();
+    let mut policy = FixedHalfStepSearch;
+    let q0 = vec![0.0, 0.0];
+
+    let res = solver.solve(q0, &problem, &mut policy);
+
+    assert!(res.converged, "custom policy should converge: {:?}", res);
+    assert!(res.r_norm < 1e-6, "residual too large: {}", res.r_norm);
 }

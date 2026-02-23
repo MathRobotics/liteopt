@@ -1,7 +1,9 @@
 use liteopt::{
     manifolds::{space::Space, EuclideanSpace},
     problems::least_squares::LeastSquaresProblem,
-    solvers::gn::GaussNewton,
+    solvers::gn::{
+        GaussNewton, LineSearchContext, LineSearchPolicy, LineSearchResult, NoLineSearch,
+    },
 };
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -74,15 +76,8 @@ struct Planar2LinkProblem {
     target: [f64; 2],
 }
 
-impl<S> LeastSquaresProblem<S> for Planar2LinkProblem
-where
-    S: Space<Point = Vec<f64>, Tangent = Vec<f64>>,
-{
-    fn residual_dim(&self) -> usize {
-        2
-    }
-
-    fn residual(&self, q: &[f64], r: &mut [f64]) {
+impl Planar2LinkProblem {
+    fn residual_eval(&self, q: &[f64], r: &mut [f64]) {
         let q1 = q[0];
         let q2 = q[1];
         let x = self.l1 * q1.cos() + self.l2 * (q1 + q2).cos();
@@ -91,7 +86,7 @@ where
         r[1] = y - self.target[1];
     }
 
-    fn jacobian(&self, q: &[f64], j: &mut [f64]) {
+    fn jacobian_eval(&self, q: &[f64], j: &mut [f64]) {
         let q1 = q[0];
         let q2 = q[1];
         let s1 = q1.sin();
@@ -103,6 +98,23 @@ where
         j[1] = -self.l2 * s12;
         j[2] = self.l1 * c1 + self.l2 * c12;
         j[3] = self.l2 * c12;
+    }
+}
+
+impl<S> LeastSquaresProblem<S> for Planar2LinkProblem
+where
+    S: Space<Point = Vec<f64>, Tangent = Vec<f64>>,
+{
+    fn residual_dim(&self) -> usize {
+        2
+    }
+
+    fn residual(&self, q: &[f64], r: &mut [f64]) {
+        self.residual_eval(q, r);
+    }
+
+    fn jacobian(&self, q: &[f64], j: &mut [f64]) {
+        self.jacobian_eval(q, j);
     }
 }
 
@@ -125,11 +137,22 @@ where
         max_iters,
         tol_r: 1e-9,
         tol_dq: 1e-12,
-        line_search: true,
-        ls_beta: 0.5,
-        ls_max_steps: 20,
-        c_armijo: 1e-4,
         verbose: false,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct FixedHalfStepSearch;
+
+impl LineSearchPolicy for FixedHalfStepSearch {
+    fn search(
+        &mut self,
+        ctx: &LineSearchContext,
+        eval_cost: &mut dyn FnMut(f64) -> Option<f64>,
+    ) -> LineSearchResult {
+        let alpha = 0.5 * ctx.alpha0;
+        let accepted = eval_cost(alpha).is_some();
+        LineSearchResult { accepted, alpha }
     }
 }
 
@@ -153,7 +176,7 @@ fn target_error_norm(problem: &Planar2LinkProblem, q: &[f64]) -> f64 {
 fn gauss_newton_behavior_converges_on_planar_two_link_problem() {
     let problem = planar_two_link_problem();
     let solver = gauss_newton_solver(EuclideanSpace, 200);
-    let res = solver.solve(vec![0.0, 0.0], &problem);
+    let res = solver.solve_with_default_line_search(vec![0.0, 0.0], &problem);
 
     assert!(res.converged, "did not converge: {:?}", res);
     assert!(res.r_norm < 1e-6, "residual too large: {}", res.r_norm);
@@ -166,7 +189,7 @@ fn gauss_newton_behavior_improves_forward_kinematics_error() {
     let q0 = vec![0.0, 0.0];
     let initial_err = target_error_norm(&problem, &q0);
 
-    let res = solver.solve(q0, &problem);
+    let res = solver.solve_with_default_line_search(q0, &problem);
     let final_err = target_error_norm(&problem, &res.x);
 
     assert!(
@@ -184,7 +207,7 @@ fn gauss_newton_behavior_custom_manifold_converges_on_planar_two_link_problem() 
     let problem = planar_two_link_problem();
     let solver = gauss_newton_solver(MyManifold, 200);
     let q0 = vec![3.0 * std::f64::consts::PI, -2.0 * std::f64::consts::PI];
-    let res = solver.solve(q0, &problem);
+    let res = solver.solve_with_default_line_search(q0, &problem);
     let final_err = target_error_norm(&problem, &res.x);
 
     assert!(res.converged, "did not converge: {:?}", res);
@@ -200,7 +223,7 @@ fn gauss_newton_behavior_custom_manifold_wraps_solution_angles_into_primary_rang
     let problem = planar_two_link_problem();
     let solver = gauss_newton_solver(MyManifold, 200);
     let q0 = vec![3.0 * std::f64::consts::PI, -2.0 * std::f64::consts::PI];
-    let res = solver.solve(q0, &problem);
+    let res = solver.solve_with_default_line_search(q0, &problem);
 
     for qi in &res.x {
         assert!(
@@ -214,7 +237,8 @@ fn gauss_newton_behavior_custom_manifold_wraps_solution_angles_into_primary_rang
 #[test]
 fn gauss_newton_behavior_stops_after_maximum_iterations() {
     let problem = planar_two_link_problem();
-    let short = gauss_newton_solver(EuclideanSpace, 1).solve(vec![0.0, 0.0], &problem);
+    let short = gauss_newton_solver(EuclideanSpace, 1)
+        .solve_with_default_line_search(vec![0.0, 0.0], &problem);
 
     assert!(
         !short.converged,
@@ -227,8 +251,10 @@ fn gauss_newton_behavior_stops_after_maximum_iterations() {
 #[test]
 fn gauss_newton_behavior_longer_run_reduces_cost_more_than_short_run() {
     let problem = planar_two_link_problem();
-    let short = gauss_newton_solver(EuclideanSpace, 1).solve(vec![0.0, 0.0], &problem);
-    let full = gauss_newton_solver(EuclideanSpace, 200).solve(vec![0.0, 0.0], &problem);
+    let short = gauss_newton_solver(EuclideanSpace, 1)
+        .solve_with_default_line_search(vec![0.0, 0.0], &problem);
+    let full = gauss_newton_solver(EuclideanSpace, 200)
+        .solve_with_default_line_search(vec![0.0, 0.0], &problem);
 
     assert!(full.converged, "full run should converge: {:?}", full);
     assert!(full.iters <= 200);
@@ -255,7 +281,8 @@ fn gauss_newton_behavior_stops_after_repeated_linear_solve_failure() {
 
     let project = |_x: &mut [f64]| {};
     let x0 = vec![0.0];
-    let res = solver.solve_with_fn(1, x0, residual_fn, jacobian_fn, project);
+    let mut line_search = NoLineSearch;
+    let res = solver.solve_with_fn(1, x0, residual_fn, jacobian_fn, project, &mut line_search);
 
     assert!(
         !res.converged,
@@ -263,6 +290,50 @@ fn gauss_newton_behavior_stops_after_repeated_linear_solve_failure() {
         res
     );
     assert_eq!(res.iters, 3, "solver should stop exactly at max_iters");
+}
+
+#[test]
+fn gauss_newton_behavior_supports_custom_line_search_policy() {
+    let problem = planar_two_link_problem();
+    let solver = gauss_newton_solver(EuclideanSpace, 200);
+    let mut policy = FixedHalfStepSearch;
+    let m = 2;
+
+    let res = solver.solve_with_fn(
+        m,
+        vec![0.0, 0.0],
+        |x, r| problem.residual_eval(x, r),
+        |x, j| problem.jacobian_eval(x, j),
+        |_x| {},
+        &mut policy,
+    );
+
+    assert!(res.converged, "custom policy should converge: {:?}", res);
+    assert!(res.r_norm < 1e-6, "residual too large: {}", res.r_norm);
+}
+
+#[test]
+fn gauss_newton_behavior_supports_explicit_no_line_search_policy() {
+    let problem = planar_two_link_problem();
+    let solver = gauss_newton_solver(EuclideanSpace, 200);
+    let x0 = vec![0.0, 0.0];
+    let m = 2;
+
+    let mut r0 = vec![0.0; m];
+    problem.residual_eval(&x0, &mut r0);
+    let initial_cost = 0.5 * r0.iter().map(|v| v * v).sum::<f64>();
+
+    let mut line_search = NoLineSearch;
+    let res = solver.solve_with_fn(
+        m,
+        x0,
+        |x, r| problem.residual_eval(x, r),
+        |x, j| problem.jacobian_eval(x, j),
+        |_x| {},
+        &mut line_search,
+    );
+
+    assert!(res.cost < initial_cost);
 }
 
 #[test]
@@ -277,7 +348,8 @@ fn gauss_newton_behavior_default_uses_euclidean_space() {
     };
     let project = |_x: &mut [f64]| {};
 
-    let res = solver.solve_with_fn(1, vec![0.0], residual_fn, jacobian_fn, project);
+    let res =
+        solver.solve_with_fn_default_line_search(1, vec![0.0], residual_fn, jacobian_fn, project);
     assert!(res.converged, "default solver should converge: {:?}", res);
     assert!((res.x[0] - 2.0).abs() < 1e-6);
 }

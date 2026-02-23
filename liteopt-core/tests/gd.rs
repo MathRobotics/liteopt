@@ -4,7 +4,9 @@ use liteopt::{
         objective::Objective,
         test_functions::{Quadratic, Rosenbrock},
     },
-    solvers::gd::GradientDescent,
+    solvers::gd::{
+        CostDecrease, GradientDescent, LineSearchContext, LineSearchPolicy, LineSearchResult,
+    },
 };
 
 fn gd_solver(step_size: f64, max_iters: usize, tol_grad: f64) -> GradientDescent<EuclideanSpace> {
@@ -24,6 +26,23 @@ fn quadratic_value(x: &Vec<f64>) -> f64 {
 
 fn quadratic_gradient(x: &Vec<f64>, grad: &mut Vec<f64>) {
     grad[0] = 2.0 * (x[0] - 3.0);
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct FixedHalfStepSearch;
+
+impl LineSearchPolicy for FixedHalfStepSearch {
+    fn search(
+        &mut self,
+        ctx: &LineSearchContext,
+        eval_cost: &mut dyn FnMut(f64) -> Option<f64>,
+    ) -> LineSearchResult {
+        let alpha = 0.5 * ctx.alpha0;
+        let accepted = eval_cost(alpha)
+            .map(|cost_trial| cost_trial < ctx.cost0)
+            .unwrap_or(false);
+        LineSearchResult { accepted, alpha }
+    }
 }
 
 #[test]
@@ -180,6 +199,44 @@ fn gradient_descent_behavior_default_can_omit_space_field() {
         |x, grad| {
             grad[0] = 2.0 * (x[0] - 3.0);
         },
+    );
+
+    assert!(result.converged);
+    assert!((result.x[0] - 3.0).abs() < 1e-6);
+}
+
+#[test]
+fn gradient_descent_behavior_supports_custom_line_search_policy() {
+    let solver = gd_solver(1.0, 20, 1e-9);
+    let x0 = vec![0.0];
+    let f0 = quadratic_value(&x0);
+    let mut policy = FixedHalfStepSearch;
+
+    let result = solver.minimize_with_fn_and_line_search(
+        x0,
+        quadratic_value,
+        quadratic_gradient,
+        &mut policy,
+    );
+
+    assert!(
+        result.converged,
+        "custom policy should converge: {:?}",
+        result
+    );
+    assert!(result.f < f0);
+    assert!((result.x[0] - 3.0).abs() < 1e-9);
+}
+
+#[test]
+fn gradient_descent_behavior_supports_cost_decrease_policy() {
+    let solver = gd_solver(0.1, 200, 1e-9);
+    let mut policy = CostDecrease;
+    let result = solver.minimize_with_fn_and_line_search(
+        vec![0.0],
+        quadratic_value,
+        quadratic_gradient,
+        &mut policy,
     );
 
     assert!(result.converged);
