@@ -7,7 +7,9 @@ A lightweight optimization library written in Rust with Python bindings.
 Install from PyPI:
 
 ```bash
-pip install liteopt
+uv venv
+source .venv/bin/activate
+uv pip install liteopt
 ```
 
 Install from source (development):
@@ -15,14 +17,13 @@ Install from source (development):
 Requirements:
 - Rust toolchain (`cargo`)
 - Python 3.8+
+- `uv`
 
 ```bash
 cd liteopt-py
-python -m venv .venv
-source .venv/bin/activate
-pip install -U pip maturin
-maturin develop
-python -c "import liteopt; print(liteopt.__file__)"
+uv sync --extra dev
+uv run --extra dev maturin develop --manifest-path Cargo.toml
+uv run python -c "import liteopt; print(liteopt.__file__)"
 ```
 
 ## Quick Start

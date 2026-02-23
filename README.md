@@ -7,18 +7,18 @@ Lightweight optimization toolbox with a small Rust core and Python bindings.
 Python package (PyPI):
 
 ```bash
-pip install liteopt
+uv venv
+source .venv/bin/activate
+uv pip install liteopt
 ```
 
 Python package from source (development):
 
 ```bash
 cd liteopt-py
-python -m venv .venv
-source .venv/bin/activate
-pip install -U pip maturin
-maturin develop
-python -c "import liteopt; print(liteopt.__file__)"
+uv sync --extra dev
+uv run --extra dev maturin develop --manifest-path Cargo.toml
+uv run python -c "import liteopt; print(liteopt.__file__)"
 ```
 
 Rust core in this workspace:
@@ -26,6 +26,49 @@ Rust core in this workspace:
 ```bash
 cargo test -p liteopt
 ```
+
+## End-to-End Setup (Clone -> Build -> Python Example)
+
+Prerequisites:
+- Rust toolchain (`cargo`)
+- Python 3.8+
+- `uv`
+
+1. Clone and move into this repository:
+
+```bash
+git clone https://github.com/MathRobotics/liteopt.git
+cd liteopt
+```
+
+2. Build `liteopt-core`:
+
+```bash
+cargo build -p liteopt
+```
+
+3. Build and install Python bindings (`liteopt-py`) into the uv-managed environment:
+
+```bash
+uv sync --project liteopt-py --extra dev
+uv run --project liteopt-py maturin develop --manifest-path liteopt-py/Cargo.toml
+```
+
+4. Run a `liteopt-py` example (gradient descent):
+
+```bash
+uv run --project liteopt-py python - <<'PY'
+import liteopt
+
+f = lambda x: (x[0] - 3.0) ** 2
+grad = lambda x: [2.0 * (x[0] - 3.0)]
+
+x_star, f_star, ok = liteopt.gd(f, grad, x0=[0.0], step_size=0.1)
+print(ok, x_star, f_star)
+PY
+```
+
+If setup succeeded, `ok` is `True` and `x_star[0]` is close to `3.0`.
 
 ## Workspace Structure
 
