@@ -7,6 +7,7 @@ fn main() {
         max_iters: 100,
         tol_grad: 1e-9,
         verbose: false,
+        collect_trace: false,
     };
 
     let result = solver.minimize_with_fn(

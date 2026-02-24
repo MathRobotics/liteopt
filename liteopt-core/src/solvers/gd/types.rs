@@ -1,4 +1,5 @@
 use crate::manifolds::{space::Space, EuclideanSpace};
+use crate::solvers::SolverTraceRecord;
 
 /// Configuration for gradient descent.
 #[derive(Clone, Debug)]
@@ -13,6 +14,8 @@ pub struct GradientDescent<S: Space = EuclideanSpace> {
     pub tol_grad: f64,
     /// If true, prints per-iteration diagnostics (f, |grad|, step size).
     pub verbose: bool,
+    /// If true, stores per-iteration trace rows into the result.
+    pub collect_trace: bool,
 }
 
 impl<S: Space> GradientDescent<S> {
@@ -24,6 +27,7 @@ impl<S: Space> GradientDescent<S> {
             max_iters: 100,
             tol_grad: 1e-6,
             verbose: false,
+            collect_trace: false,
         }
     }
 }
@@ -49,4 +53,5 @@ pub struct OptimizeResult<P> {
     pub iters: usize,
     pub grad_norm: f64,
     pub converged: bool,
+    pub trace: Option<Vec<SolverTraceRecord>>,
 }

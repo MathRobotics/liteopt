@@ -3,6 +3,7 @@ use crate::numerics::linalg::{
     dot, jj_t_plus_lambda, jt_j_plus_lambda, jt_mul_vec, norm2, solve_linear_inplace,
 };
 use crate::problems::least_squares::LeastSquaresProblem;
+use crate::solvers::common::trace::{SolverTracer, TraceRow};
 
 use super::line_search::{
     ArmijoBacktracking, LineSearchContext, LineSearchPolicy, NoLineSearch,
@@ -15,6 +16,27 @@ use super::types::{
 use super::workspace::GaussNewtonWorkspace;
 
 impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
+    fn make_tracer(&self) -> SolverTracer {
+        if self.collect_trace {
+            SolverTracer::gn_with_history(self.verbose)
+        } else {
+            SolverTracer::gn(self.verbose)
+        }
+    }
+
+    fn attach_trace(
+        &self,
+        mut result: GaussNewtonResult<Vec<f64>>,
+        trace: SolverTracer,
+    ) -> GaussNewtonResult<Vec<f64>> {
+        result.trace = if self.collect_trace {
+            Some(trace.into_history())
+        } else {
+            None
+        };
+        result
+    }
+
     fn compute_direction<JF>(
         &self,
         x: &[f64],
@@ -161,6 +183,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         residual_fn: R,
         jacobian_fn: JF,
         project: P,
+        trace: &SolverTracer,
     ) -> GaussNewtonResult<Vec<f64>>
     where
         R: FnMut(&[f64], &mut [f64]),
@@ -170,15 +193,39 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         match self.line_search_method {
             GaussNewtonLineSearchMethod::Armijo => {
                 let mut line_search = self.configured_armijo();
-                self.run_with_line_search(m, x, residual_fn, jacobian_fn, project, &mut line_search)
+                self.run_with_line_search(
+                    m,
+                    x,
+                    residual_fn,
+                    jacobian_fn,
+                    project,
+                    &mut line_search,
+                    trace,
+                )
             }
             GaussNewtonLineSearchMethod::StrictDecrease => {
                 let mut line_search = self.configured_strict_decrease();
-                self.run_with_line_search(m, x, residual_fn, jacobian_fn, project, &mut line_search)
+                self.run_with_line_search(
+                    m,
+                    x,
+                    residual_fn,
+                    jacobian_fn,
+                    project,
+                    &mut line_search,
+                    trace,
+                )
             }
             GaussNewtonLineSearchMethod::None => {
                 let mut line_search = NoLineSearch;
-                self.run_with_line_search(m, x, residual_fn, jacobian_fn, project, &mut line_search)
+                self.run_with_line_search(
+                    m,
+                    x,
+                    residual_fn,
+                    jacobian_fn,
+                    project,
+                    &mut line_search,
+                    trace,
+                )
             }
         }
     }
@@ -191,6 +238,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         mut jacobian_fn: JF,
         mut project: P,
         line_search: &mut LS,
+        trace: &SolverTracer,
     ) -> GaussNewtonResult<Vec<f64>>
     where
         R: FnMut(&[f64], &mut [f64]),
@@ -208,8 +256,16 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         let mut cost = 0.5 * dot(&ws.r, &ws.r);
         let mut r_norm = norm2(&ws.r);
 
+        trace.emit(TraceRow::iter(0).cost(cost).r_norm(r_norm).note("initial"));
+
         for it in 0..self.max_iters {
             if r_norm <= self.tol_r {
+                trace.emit(
+                    TraceRow::iter(it)
+                        .cost(cost)
+                        .r_norm(r_norm)
+                        .note("converged_r"),
+                );
                 return GaussNewtonResult {
                     x,
                     cost,
@@ -217,6 +273,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
                     r_norm,
                     dx_norm: 0.0,
                     converged: true,
+                    trace: None,
                 };
             }
 
@@ -233,8 +290,21 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
             let Some(direction) = direction else {
                 if self.damping_update == GaussNewtonDampingUpdate::Adaptive {
                     lambda *= 10.0;
+                    trace.emit(
+                        TraceRow::iter(it)
+                            .cost(cost)
+                            .r_norm(r_norm)
+                            .lambda(lambda)
+                            .note("linear_solve_failed"),
+                    );
                     continue;
                 }
+                trace.emit(
+                    TraceRow::iter(it)
+                        .cost(cost)
+                        .r_norm(r_norm)
+                        .note("linear_solve_failed_fixed"),
+                );
                 return GaussNewtonResult {
                     x,
                     cost,
@@ -242,6 +312,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
                     r_norm,
                     dx_norm: 0.0,
                     converged: false,
+                    trace: None,
                 };
             };
 
@@ -250,6 +321,13 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
                 == GaussNewtonLineSearchMethod::StrictDecrease
                 && !line_search.requires_directional_derivative();
             if dx_norm <= self.tol_dq && !skip_pre_step_dx_stop {
+                trace.emit(
+                    TraceRow::iter(it)
+                        .cost(cost)
+                        .r_norm(r_norm)
+                        .dx_norm(dx_norm)
+                        .note("converged_dx"),
+                );
                 return GaussNewtonResult {
                     x,
                     cost,
@@ -257,11 +335,19 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
                     r_norm,
                     dx_norm,
                     converged: true,
+                    trace: None,
                 };
             }
 
             let alpha0 = self.step_scale.clamp(0.0, 1.0);
             if alpha0 == 0.0 {
+                trace.emit(
+                    TraceRow::iter(it)
+                        .cost(cost)
+                        .r_norm(r_norm)
+                        .dx_norm(dx_norm)
+                        .note("zero_step_scale"),
+                );
                 return GaussNewtonResult {
                     x,
                     cost,
@@ -269,6 +355,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
                     r_norm,
                     dx_norm,
                     converged: false,
+                    trace: None,
                 };
             }
 
@@ -288,8 +375,25 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
             if !ls.accepted {
                 if self.damping_update == GaussNewtonDampingUpdate::Adaptive {
                     lambda *= 10.0;
+                    trace.emit(
+                        TraceRow::iter(it)
+                            .cost(cost)
+                            .r_norm(r_norm)
+                            .dx_norm(dx_norm)
+                            .alpha(ls.alpha)
+                            .lambda(lambda)
+                            .note("rejected"),
+                    );
                     continue;
                 }
+                trace.emit(
+                    TraceRow::iter(it)
+                        .cost(cost)
+                        .r_norm(r_norm)
+                        .dx_norm(dx_norm)
+                        .alpha(ls.alpha)
+                        .note("rejected_fixed"),
+                );
                 return GaussNewtonResult {
                     x,
                     cost,
@@ -297,6 +401,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
                     r_norm,
                     dx_norm: 0.0,
                     converged: false,
+                    trace: None,
                 };
             }
 
@@ -305,8 +410,25 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
             let Some(cost_trial) = cost_trial else {
                 if self.damping_update == GaussNewtonDampingUpdate::Adaptive {
                     lambda *= 10.0;
+                    trace.emit(
+                        TraceRow::iter(it)
+                            .cost(cost)
+                            .r_norm(r_norm)
+                            .dx_norm(dx_norm)
+                            .alpha(ls.alpha)
+                            .lambda(lambda)
+                            .note("accepted_step_invalid"),
+                    );
                     continue;
                 }
+                trace.emit(
+                    TraceRow::iter(it)
+                        .cost(cost)
+                        .r_norm(r_norm)
+                        .dx_norm(dx_norm)
+                        .alpha(ls.alpha)
+                        .note("accepted_step_invalid_fixed"),
+                );
                 return GaussNewtonResult {
                     x,
                     cost,
@@ -314,6 +436,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
                     r_norm,
                     dx_norm: 0.0,
                     converged: false,
+                    trace: None,
                 };
             };
 
@@ -322,7 +445,23 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
             if self.damping_update == GaussNewtonDampingUpdate::Adaptive {
                 lambda = (0.5 * lambda).max(self.lambda);
             }
+            trace.emit(
+                TraceRow::iter(it)
+                    .cost(cost)
+                    .r_norm(r_norm)
+                    .dx_norm(dx_norm)
+                    .alpha(ls.alpha)
+                    .lambda(lambda)
+                    .note("accepted"),
+            );
         }
+
+        trace.emit(
+            TraceRow::iter(self.max_iters)
+                .cost(cost)
+                .r_norm(r_norm)
+                .note("max_iters"),
+        );
 
         GaussNewtonResult {
             x,
@@ -331,6 +470,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
             r_norm,
             dx_norm: f64::NAN,
             converged: false,
+            trace: None,
         }
     }
 
@@ -346,14 +486,44 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         LS: LineSearchPolicy,
     {
         let m = problem.residual_dim();
-        self.solve_with_fn(
+        let trace = self.make_tracer();
+        let result = self.run_with_fn(
             m,
             x,
             |x, r| problem.residual(x, r),
             |x, j| problem.jacobian(x, j),
             |x| problem.project(x),
             line_search,
-        )
+            &trace,
+        );
+        self.attach_trace(result, trace)
+    }
+
+    /// Solve with an explicit line search policy.
+    ///
+    /// - m: residual dimension
+    /// - x: initial guess (len = n)
+    /// - residual_fn(x, r): fill r (len = m)
+    /// - jacobian_fn(x, J): fill Jacobian (len = m*n, row-major)
+    /// - project(x): optional projection
+    /// - line_search: external step-size policy
+    fn run_with_fn<R, JF, P, LS>(
+        &self,
+        m: usize,
+        x: Vec<f64>,
+        residual_fn: R,
+        jacobian_fn: JF,
+        project: P,
+        line_search: &mut LS,
+        trace: &SolverTracer,
+    ) -> GaussNewtonResult<Vec<f64>>
+    where
+        R: FnMut(&[f64], &mut [f64]),
+        JF: FnMut(&[f64], &mut [f64]),
+        P: FnMut(&mut [f64]),
+        LS: LineSearchPolicy,
+    {
+        self.run_with_line_search(m, x, residual_fn, jacobian_fn, project, line_search, trace)
     }
 
     /// Solve with an explicit line search policy.
@@ -379,7 +549,9 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         P: FnMut(&mut [f64]),
         LS: LineSearchPolicy,
     {
-        self.run_with_line_search(m, x, residual_fn, jacobian_fn, project, line_search)
+        let trace = self.make_tracer();
+        let result = self.run_with_fn(m, x, residual_fn, jacobian_fn, project, line_search, &trace);
+        self.attach_trace(result, trace)
     }
 
     /// Solve using the configured line-search method on the solver.
@@ -392,13 +564,16 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         P: LeastSquaresProblem<S>,
     {
         let m = problem.residual_dim();
-        self.run_with_configured_line_search(
+        let trace = self.make_tracer();
+        let result = self.run_with_configured_line_search(
             m,
             x,
             |x, r| problem.residual(x, r),
             |x, j| problem.jacobian(x, j),
             |x| problem.project(x),
-        )
+            &trace,
+        );
+        self.attach_trace(result, trace)
     }
 
     /// Callback variant of [`solve_with_default_line_search`].
@@ -415,6 +590,9 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         JF: FnMut(&[f64], &mut [f64]),
         P: FnMut(&mut [f64]),
     {
-        self.run_with_configured_line_search(m, x, residual_fn, jacobian_fn, project)
+        let trace = self.make_tracer();
+        let result =
+            self.run_with_configured_line_search(m, x, residual_fn, jacobian_fn, project, &trace);
+        self.attach_trace(result, trace)
     }
 }

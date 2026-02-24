@@ -2,15 +2,38 @@ use crate::manifolds::space::Space;
 use crate::problems::objective::Objective;
 use crate::solvers::common::step::retract_step;
 use crate::solvers::common::step_policy::{LineSearchContext, LineSearchPolicy};
+use crate::solvers::common::trace::{SolverTracer, TraceRow};
 
 use super::types::{GradientDescent, OptimizeResult};
 
 impl<S: Space> GradientDescent<S> {
+    fn make_tracer(&self) -> SolverTracer {
+        if self.collect_trace {
+            SolverTracer::gd_with_history(self.verbose)
+        } else {
+            SolverTracer::gd(self.verbose)
+        }
+    }
+
+    fn attach_trace(
+        &self,
+        mut result: OptimizeResult<S::Point>,
+        trace: SolverTracer,
+    ) -> OptimizeResult<S::Point> {
+        result.trace = if self.collect_trace {
+            Some(trace.into_history())
+        } else {
+            None
+        };
+        result
+    }
+
     fn run_with_fn<F, G>(
         &self,
         mut x: S::Point,
         mut value_fn: F,
         mut grad_fn: G,
+        trace: &SolverTracer,
     ) -> OptimizeResult<S::Point>
     where
         F: FnMut(&S::Point) -> f64,
@@ -19,7 +42,6 @@ impl<S: Space> GradientDescent<S> {
         // In this lightweight design, gradient and search direction are
         // represented as local tangent vectors around x.
         let mut grad = self.space.zero_tangent_like(&x);
-
         // Pre-allocate buffers to avoid repeated allocations.
         let mut direction = self.space.zero_tangent_like(&x);
         let mut x_next = self.space.zero_like(&x);
@@ -31,25 +53,28 @@ impl<S: Space> GradientDescent<S> {
             let grad_norm = self.space.tangent_norm(&grad);
             let f_current = self.verbose.then(|| value_fn(&x));
             if let Some(f) = f_current {
-                println!(
-                    "[gd] iter {:>6} | f {:>13.6e} | grad {:>13.6e} | step {:>+9.3e}",
-                    k, f, grad_norm, self.step_size
+                trace.emit(
+                    TraceRow::iter(k)
+                        .f(f)
+                        .grad_norm(grad_norm)
+                        .step_size(self.step_size),
                 );
             }
             if grad_norm < self.tol_grad {
                 let f = f_current.unwrap_or_else(|| value_fn(&x));
-                if self.verbose {
-                    println!(
-                        "[gd] iter {:>6} | converged | f {:>13.6e} | grad {:>13.6e}",
-                        k, f, grad_norm
-                    );
-                }
+                trace.emit(
+                    TraceRow::iter(k)
+                        .f(f)
+                        .grad_norm(grad_norm)
+                        .note("converged"),
+                );
                 return OptimizeResult {
                     x,
                     f,
                     iters: k,
                     grad_norm,
                     converged: true,
+                    trace: None,
                 };
             }
 
@@ -75,6 +100,7 @@ impl<S: Space> GradientDescent<S> {
             iters: self.max_iters,
             grad_norm,
             converged: false,
+            trace: None,
         }
     }
 
@@ -84,6 +110,7 @@ impl<S: Space> GradientDescent<S> {
         mut value_fn: F,
         mut grad_fn: G,
         line_search: &mut LS,
+        trace: &SolverTracer,
     ) -> OptimizeResult<S::Point>
     where
         F: FnMut(&S::Point) -> f64,
@@ -100,25 +127,26 @@ impl<S: Space> GradientDescent<S> {
             let grad_norm = self.space.tangent_norm(&grad);
             let f0 = value_fn(&x);
 
-            if self.verbose {
-                println!(
-                    "[gd] iter {:>6} | f {:>13.6e} | grad {:>13.6e} | step {:>+9.3e}",
-                    k, f0, grad_norm, self.step_size
-                );
-            }
+            trace.emit(
+                TraceRow::iter(k)
+                    .f(f0)
+                    .grad_norm(grad_norm)
+                    .step_size(self.step_size),
+            );
             if grad_norm < self.tol_grad {
-                if self.verbose {
-                    println!(
-                        "[gd] iter {:>6} | converged | f {:>13.6e} | grad {:>13.6e}",
-                        k, f0, grad_norm
-                    );
-                }
+                trace.emit(
+                    TraceRow::iter(k)
+                        .f(f0)
+                        .grad_norm(grad_norm)
+                        .note("converged"),
+                );
                 return OptimizeResult {
                     x,
                     f: f0,
                     iters: k,
                     grad_norm,
                     converged: true,
+                    trace: None,
                 };
             }
 
@@ -151,6 +179,7 @@ impl<S: Space> GradientDescent<S> {
                     iters: k,
                     grad_norm,
                     converged: false,
+                    trace: None,
                 };
             }
 
@@ -164,6 +193,7 @@ impl<S: Space> GradientDescent<S> {
                     iters: k,
                     grad_norm,
                     converged: false,
+                    trace: None,
                 };
             }
             std::mem::swap(&mut x, &mut x_trial);
@@ -177,6 +207,7 @@ impl<S: Space> GradientDescent<S> {
             iters: self.max_iters,
             grad_norm,
             converged: false,
+            trace: None,
         }
     }
 
@@ -184,7 +215,9 @@ impl<S: Space> GradientDescent<S> {
     where
         O: Objective<S>,
     {
-        self.run_with_fn(x, |p| obj.value(p), |p, g| obj.gradient(p, g))
+        let trace = self.make_tracer();
+        let result = self.run_with_fn(x, |p| obj.value(p), |p, g| obj.gradient(p, g), &trace);
+        self.attach_trace(result, trace)
     }
 
     /// Minimize using user-provided value and gradient functions.
@@ -198,7 +231,9 @@ impl<S: Space> GradientDescent<S> {
         F: Fn(&S::Point) -> f64,
         G: Fn(&S::Point, &mut S::Tangent),
     {
-        self.run_with_fn(x, |p| value_fn(p), |p, g| grad_fn(p, g))
+        let trace = self.make_tracer();
+        let result = self.run_with_fn(x, |p| value_fn(p), |p, g| grad_fn(p, g), &trace);
+        self.attach_trace(result, trace)
     }
 
     /// Minimize using an explicit line-search policy.
@@ -212,12 +247,15 @@ impl<S: Space> GradientDescent<S> {
         O: Objective<S>,
         LS: LineSearchPolicy,
     {
-        self.run_with_fn_and_line_search(
+        let trace = self.make_tracer();
+        let result = self.run_with_fn_and_line_search(
             x,
             |p| obj.value(p),
             |p, g| obj.gradient(p, g),
             line_search,
-        )
+            &trace,
+        );
+        self.attach_trace(result, trace)
     }
 
     /// Minimize callbacks using an explicit line-search policy.
@@ -233,6 +271,8 @@ impl<S: Space> GradientDescent<S> {
         G: FnMut(&S::Point, &mut S::Tangent),
         LS: LineSearchPolicy,
     {
-        self.run_with_fn_and_line_search(x, value_fn, grad_fn, line_search)
+        let trace = self.make_tracer();
+        let result = self.run_with_fn_and_line_search(x, value_fn, grad_fn, line_search, &trace);
+        self.attach_trace(result, trace)
     }
 }

@@ -1,4 +1,5 @@
 use crate::manifolds::{space::Space, EuclideanSpace};
+use crate::solvers::SolverTraceRecord;
 
 #[derive(Clone, Debug)]
 pub struct LevenbergMarquardtResult<P> {
@@ -8,6 +9,7 @@ pub struct LevenbergMarquardtResult<P> {
     pub r_norm: f64,
     pub dx_norm: f64,
     pub converged: bool,
+    pub trace: Option<Vec<SolverTraceRecord>>,
 }
 
 #[derive(Clone, Debug)]
@@ -21,6 +23,7 @@ pub struct LevenbergMarquardt<S: Space<Point = Vec<f64>, Tangent = Vec<f64>> = E
     pub tol_r: f64,  // stop if ||r|| < tol_r
     pub tol_dq: f64, // stop if ||local update|| < tol_dq
     pub verbose: bool,
+    pub collect_trace: bool,
 }
 
 impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
@@ -36,6 +39,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
             tol_r: 1e-6,
             tol_dq: 1e-6,
             verbose: false,
+            collect_trace: false,
         }
     }
 }

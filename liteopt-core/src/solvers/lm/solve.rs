@@ -2,11 +2,33 @@ use crate::manifolds::space::Space;
 use crate::numerics::linalg::{dot, jj_t_plus_lambda, jt_mul_vec, norm2, solve_linear_inplace};
 use crate::problems::least_squares::LeastSquaresProblem;
 use crate::solvers::common::step_policy::{CostDecrease, LineSearchContext, LineSearchPolicy};
+use crate::solvers::common::trace::{SolverTracer, TraceRow};
 
 use super::types::{LevenbergMarquardt, LevenbergMarquardtResult};
 use super::workspace::LmWorkspace;
 
 impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
+    fn make_tracer(&self) -> SolverTracer {
+        if self.collect_trace {
+            SolverTracer::lm_with_history(self.verbose)
+        } else {
+            SolverTracer::lm(self.verbose)
+        }
+    }
+
+    fn attach_trace(
+        &self,
+        mut result: LevenbergMarquardtResult<Vec<f64>>,
+        trace: SolverTracer,
+    ) -> LevenbergMarquardtResult<Vec<f64>> {
+        result.trace = if self.collect_trace {
+            Some(trace.into_history())
+        } else {
+            None
+        };
+        result
+    }
+
     fn compute_direction<JF>(
         &self,
         x: &[f64],
@@ -107,18 +129,20 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
         LS: LineSearchPolicy,
     {
         let m = problem.residual_dim();
-        self.solve_with_fn(
+        let trace = self.make_tracer();
+        let result = self.run_with_fn(
             m,
             x,
             |x, r| problem.residual(x, r),
             |x, j| problem.jacobian(x, j),
             |x| problem.project(x),
             line_search,
-        )
+            &trace,
+        );
+        self.attach_trace(result, trace)
     }
 
-    /// Solve nonlinear least squares with LM-style damping updates.
-    pub fn solve_with_fn<R, JF, P, LS>(
+    fn run_with_fn<R, JF, P, LS>(
         &self,
         m: usize,
         mut x: Vec<f64>,
@@ -126,6 +150,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
         mut jacobian_fn: JF,
         mut project: P,
         line_search: &mut LS,
+        trace: &SolverTracer,
     ) -> LevenbergMarquardtResult<Vec<f64>>
     where
         R: FnMut(&[f64], &mut [f64]),
@@ -155,12 +180,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
         let mut cost = 0.5 * dot(&ws.r, &ws.r);
         let mut r_norm = norm2(&ws.r);
 
-        if self.verbose {
-            println!(
-                "[lm] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | note initial",
-                0, cost, r_norm
-            );
-        }
+        trace.emit(TraceRow::iter(0).cost(cost).r_norm(r_norm).note("initial"));
 
         for it in 0..self.max_iters {
             if r_norm <= self.tol_r {
@@ -171,6 +191,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
                     r_norm,
                     dx_norm: 0.0,
                     converged: true,
+                    trace: None,
                 };
             }
 
@@ -185,22 +206,23 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
             );
             let Some((dx_norm, dphi0, used_steepest_descent)) = direction else {
                 lambda *= lambda_up;
-                if self.verbose {
-                    println!(
-                        "[lm] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | lambda {:>9.3e} | note linear_solve_failed",
-                        it, cost, r_norm, lambda
-                    );
-                }
+                trace.emit(
+                    TraceRow::iter(it)
+                        .cost(cost)
+                        .r_norm(r_norm)
+                        .lambda(lambda)
+                        .note("linear_solve_failed"),
+                );
                 continue;
             };
             last_dx_norm = dx_norm;
-            if used_steepest_descent && self.verbose {
-                println!(
-                    "[lm] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | note fallback_to_steepest_descent dphi0={:>13.6e}",
-                    it,
-                    cost,
-                    r_norm,
-                    dphi0.unwrap_or(f64::NAN)
+            if used_steepest_descent {
+                trace.emit(
+                    TraceRow::iter(it)
+                        .cost(cost)
+                        .r_norm(r_norm)
+                        .dphi0(dphi0.unwrap_or(f64::NAN))
+                        .note("fallback_to_steepest_descent"),
                 );
             }
 
@@ -212,6 +234,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
                     r_norm,
                     dx_norm,
                     converged: true,
+                    trace: None,
                 };
             }
 
@@ -224,6 +247,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
                     r_norm,
                     dx_norm,
                     converged: false,
+                    trace: None,
                 };
             }
 
@@ -245,31 +269,40 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
                     self.evaluate_trial(&x, ls.alpha, &mut residual_fn, &mut project, &mut ws);
                 let Some(cost_trial) = cost_trial else {
                     lambda *= lambda_up;
-                    if self.verbose {
-                        println!(
-                            "[lm] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | alpha {:>8.3e} | lambda {:>9.3e} | note accepted_step_invalid",
-                            it, cost, r_norm, dx_norm, ls.alpha, lambda
-                        );
-                    }
+                    trace.emit(
+                        TraceRow::iter(it)
+                            .cost(cost)
+                            .r_norm(r_norm)
+                            .dx_norm(dx_norm)
+                            .alpha(ls.alpha)
+                            .lambda(lambda)
+                            .note("accepted_step_invalid"),
+                    );
                     continue;
                 };
 
                 self.commit_trial_step(&mut x, &mut cost, &mut r_norm, cost_trial, &mut ws);
                 lambda = (lambda * lambda_down).max(1e-12);
-                if self.verbose {
-                    println!(
-                        "[lm] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | alpha {:>8.3e} | lambda {:>9.3e} | note accepted",
-                        it, cost, r_norm, dx_norm, ls.alpha, lambda
-                    );
-                }
+                trace.emit(
+                    TraceRow::iter(it)
+                        .cost(cost)
+                        .r_norm(r_norm)
+                        .dx_norm(dx_norm)
+                        .alpha(ls.alpha)
+                        .lambda(lambda)
+                        .note("accepted"),
+                );
             } else {
                 lambda *= lambda_up;
-                if self.verbose {
-                    println!(
-                        "[lm] iter {:>6} | cost {:>13.6e} | r {:>13.6e} | dx {:>13.6e} | alpha {:>8.3e} | lambda {:>9.3e} | note rejected",
-                        it, cost, r_norm, dx_norm, ls.alpha, lambda
-                    );
-                }
+                trace.emit(
+                    TraceRow::iter(it)
+                        .cost(cost)
+                        .r_norm(r_norm)
+                        .dx_norm(dx_norm)
+                        .alpha(ls.alpha)
+                        .lambda(lambda)
+                        .note("rejected"),
+                );
             }
         }
 
@@ -280,7 +313,29 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
             r_norm,
             dx_norm: last_dx_norm,
             converged: false,
+            trace: None,
         }
+    }
+
+    /// Solve nonlinear least squares with LM-style damping updates.
+    pub fn solve_with_fn<R, JF, P, LS>(
+        &self,
+        m: usize,
+        x: Vec<f64>,
+        residual_fn: R,
+        jacobian_fn: JF,
+        project: P,
+        line_search: &mut LS,
+    ) -> LevenbergMarquardtResult<Vec<f64>>
+    where
+        R: FnMut(&[f64], &mut [f64]),
+        JF: FnMut(&[f64], &mut [f64]),
+        P: FnMut(&mut [f64]),
+        LS: LineSearchPolicy,
+    {
+        let trace = self.make_tracer();
+        let result = self.run_with_fn(m, x, residual_fn, jacobian_fn, project, line_search, &trace);
+        self.attach_trace(result, trace)
     }
 
     /// Solve using default cost-decrease policy (same acceptance behavior as classic LM loop).

@@ -1,4 +1,5 @@
 use crate::manifolds::{space::Space, EuclideanSpace};
+use crate::solvers::SolverTraceRecord;
 
 #[derive(Clone, Debug)]
 pub struct GaussNewtonResult<P> {
@@ -8,6 +9,7 @@ pub struct GaussNewtonResult<P> {
     pub r_norm: f64,
     pub dx_norm: f64,
     pub converged: bool,
+    pub trace: Option<Vec<SolverTraceRecord>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -51,9 +53,10 @@ pub struct GaussNewton<S: Space<Point = Vec<f64>, Tangent = Vec<f64>> = Euclidea
     pub ls_max_steps: usize,
     pub c_armijo: f64,
     pub max_iters: usize,
-    pub tol_r: f64,    // stop if ||r|| < tol_r
-    pub tol_dq: f64,   // stop if ||local update|| < tol_dq
-    pub verbose: bool, // print per-iteration diagnostics
+    pub tol_r: f64,          // stop if ||r|| < tol_r
+    pub tol_dq: f64,         // stop if ||local update|| < tol_dq
+    pub verbose: bool,       // print per-iteration diagnostics
+    pub collect_trace: bool, // store per-iteration trace rows into the result
 }
 
 impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
@@ -74,6 +77,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
             tol_r: 1e-6,
             tol_dq: 1e-6,
             verbose: false,
+            collect_trace: false,
         }
     }
 }
