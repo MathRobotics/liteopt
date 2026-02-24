@@ -54,21 +54,19 @@ uv sync --project liteopt-py --extra dev
 uv run --project liteopt-py maturin develop --manifest-path liteopt-py/Cargo.toml
 ```
 
-4. Run a `liteopt-py` example (gradient descent):
+4. Run bundled `liteopt-py` examples:
 
 ```bash
-uv run --project liteopt-py python - <<'PY'
-import liteopt
-
-f = lambda x: (x[0] - 3.0) ** 2
-grad = lambda x: [2.0 * (x[0] - 3.0)]
-
-x_star, f_star, ok = liteopt.gd(f, grad, x0=[0.0], step_size=0.1)
-print(ok, x_star, f_star)
-PY
+uv run --project liteopt-py python liteopt-py/example/run.py all
 ```
 
-If setup succeeded, `ok` is `True` and `x_star[0]` is close to `3.0`.
+Run a single example:
+
+```bash
+uv run --project liteopt-py python liteopt-py/example/run.py gd
+uv run --project liteopt-py python liteopt-py/example/run.py gn
+uv run --project liteopt-py python liteopt-py/example/run.py lm
+```
 
 ## Workspace Structure
 
@@ -164,7 +162,7 @@ let res = solver.solve_with_fn_default_line_search(
 println!("converged={} x={:?}", res.converged, res.x);
 ```
 
-Python examples are in `liteopt-py/README.md`.
+Python examples are in `liteopt-py/example/` (`run.py`) and documented in `liteopt-py/README.md`.
 
 Bundled Rust examples in `liteopt-core/examples/` can be run with:
 

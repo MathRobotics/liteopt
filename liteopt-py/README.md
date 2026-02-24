@@ -26,6 +26,29 @@ uv run --extra dev maturin develop --manifest-path Cargo.toml
 uv run python -c "import liteopt; print(liteopt.__file__)"
 ```
 
+## Examples
+
+Run bundled examples from `liteopt-py/example/`:
+
+```bash
+cd liteopt-py
+uv run python example/run.py all
+```
+
+Or from repository root:
+
+```bash
+uv run --project liteopt-py python liteopt-py/example/run.py all
+```
+
+Run a single example:
+
+```bash
+uv run python example/run.py gd
+uv run python example/run.py gn
+uv run python example/run.py lm
+```
+
 ## Quick Start
 
 Gradient Descent:
@@ -60,11 +83,17 @@ def residual(x):
     return [x[0] - target[0], x[1] - target[1]]
 
 def jacobian(_x):
-    return [[1.0, 0.0], [0.0, 1.0]]
+    # If you return a Python list, it must be row-major 1D (m*n elements).
+    # `[[1.0, 0.0], [0.0, 1.0]]` raises TypeError.
+    return [1.0, 0.0, 0.0, 1.0]
 
 x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(residual, jacobian, x0=[0.0, 0.0])
 print(ok, x_star, cost)
 ```
+
+`jacobian` must be either:
+- row-major 1D list (`list[float]`, length = `m * n`)
+- 2D `numpy.ndarray` (`shape = (m, n)`)
 
 Gauss-Newton simple loop (fixed damping + strict-decrease line search):
 
