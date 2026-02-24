@@ -1,15 +1,19 @@
 use liteopt_core::solvers::lm::{CostDecrease, LevenbergMarquardt};
 use pyo3::prelude::*;
+use pyo3::types::PyTuple;
+use pyo3::IntoPyObjectExt;
 
 use crate::bindings::callbacks::{PyErrState, PyLeastSquaresCallbacks};
 use crate::bindings::line_search::PyLineSearchPolicy;
 use crate::bindings::manifold::PyVecManifold;
+use crate::bindings::trace::trace_records_to_pylist;
 
 /// Nonlinear least squares LM solver exposed to Python.
 ///
 /// residual: callable(x: list[float]) -> list[float]           (len = m)
 /// jacobian: callable(x: list[float]) -> list[float]           (len = m*n, row-major)
 /// line_search: optional callable(ctx: dict) -> alpha or (accepted, alpha)
+/// history: if true, return an additional list[dict] with per-iteration trace rows
 #[pyfunction(
     signature = (
         residual,
@@ -25,7 +29,8 @@ use crate::bindings::manifold::PyVecManifold;
         tol_dx = None,
         verbose = None,
         manifold = None,
-        line_search = None
+        line_search = None,
+        history = None
     )
 )]
 fn lm(
@@ -44,7 +49,9 @@ fn lm(
     verbose: Option<bool>,
     manifold: Option<Py<PyAny>>,
     line_search: Option<Py<PyAny>>,
-) -> PyResult<(Vec<f64>, f64, usize, f64, f64, bool)> {
+    history: Option<bool>,
+) -> PyResult<Py<PyAny>> {
+    let want_history = history.unwrap_or(false);
     let (space, manifold_err) = PyVecManifold::from_python(py, manifold)?;
     let solver = LevenbergMarquardt {
         space,
@@ -56,6 +63,7 @@ fn lm(
         tol_r: tol_r.unwrap_or(1e-6),
         tol_dq: tol_dx.unwrap_or(1e-6),
         verbose: verbose.unwrap_or(false),
+        collect_trace: want_history,
     };
 
     let err_state = PyErrState::default();
@@ -66,7 +74,7 @@ fn lm(
     let mut jacobian_fn = |x: &[f64], j_out: &mut [f64]| callbacks.jacobian_into(py, x, j_out);
     let mut project_fn = |x: &mut [f64]| callbacks.project_in_place(py, x);
 
-    let result = if let Some(line_search_obj) = line_search {
+    let mut result = if let Some(line_search_obj) = line_search {
         let mut policy = PyLineSearchPolicy::new(line_search_obj, err_state.clone());
         solver.solve_with_fn(
             m,
@@ -95,14 +103,35 @@ fn lm(
         return Err(e);
     }
 
-    Ok((
-        result.x,
-        result.cost,
-        result.iters,
-        result.r_norm,
-        result.dx_norm,
-        result.converged,
-    ))
+    if let Some(trace) = result.trace.take() {
+        let history_obj = trace_records_to_pylist(py, trace)?;
+        let out = PyTuple::new(
+            py,
+            [
+                result.x.into_py_any(py)?,
+                result.cost.into_py_any(py)?,
+                result.iters.into_py_any(py)?,
+                result.r_norm.into_py_any(py)?,
+                result.dx_norm.into_py_any(py)?,
+                result.converged.into_py_any(py)?,
+                history_obj,
+            ],
+        )?;
+        Ok(out.into_any().unbind())
+    } else {
+        let out = PyTuple::new(
+            py,
+            [
+                result.x.into_py_any(py)?,
+                result.cost.into_py_any(py)?,
+                result.iters.into_py_any(py)?,
+                result.r_norm.into_py_any(py)?,
+                result.dx_norm.into_py_any(py)?,
+                result.converged.into_py_any(py)?,
+            ],
+        )?;
+        Ok(out.into_any().unbind())
+    }
 }
 
 pub(crate) fn register(module: &Bound<PyModule>) -> PyResult<()> {

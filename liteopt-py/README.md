@@ -61,6 +61,12 @@ grad = lambda x: [2.0 * (x[0] - 3.0)]
 
 x_star, f_star, ok = liteopt.gd(f, grad, x0=[0.0], step_size=0.1)
 print(ok, x_star, f_star)
+
+# Collect per-iteration history (list[dict]) with an option:
+x_star, f_star, ok, history = liteopt.gd(
+    f, grad, x0=[0.0], step_size=0.1, history=True
+)
+print("history rows:", len(history))
 ```
 
 Custom line search callback (GD):
@@ -89,6 +95,11 @@ def jacobian(_x):
 
 x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(residual, jacobian, x0=[0.0, 0.0])
 print(ok, x_star, cost)
+
+# Optional trace history:
+x_star, cost, iters, r_norm, dx_norm, ok, history = liteopt.gn(
+    residual, jacobian, x0=[0.0, 0.0], history=True
+)
 ```
 
 `jacobian` must be either:
@@ -128,6 +139,11 @@ Levenberg-Marquardt (least squares):
 ```python
 x_star, cost, iters, r_norm, dx_norm, ok = liteopt.lm(residual, jacobian, x0=[0.0, 0.0])
 print(ok, x_star, cost)
+
+# Optional trace history:
+x_star, cost, iters, r_norm, dx_norm, ok, history = liteopt.lm(
+    residual, jacobian, x0=[0.0, 0.0], history=True
+)
 ```
 
 Optional manifold callbacks:

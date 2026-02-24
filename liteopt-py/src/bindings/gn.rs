@@ -4,10 +4,13 @@ use liteopt_core::solvers::gn::{
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyTuple;
+use pyo3::IntoPyObjectExt;
 
 use crate::bindings::callbacks::{PyErrState, PyLeastSquaresCallbacks};
 use crate::bindings::line_search::PyLineSearchPolicy;
 use crate::bindings::manifold::PyVecManifold;
+use crate::bindings::trace::trace_records_to_pylist;
 
 /// Nonlinear least squares solver exposed to Python.
 ///
@@ -17,6 +20,7 @@ use crate::bindings::manifold::PyVecManifold;
 /// damping_update: "adaptive" or "fixed"
 /// linear_system: "left_jjt" or "normal_jtj"
 /// line_search_method: "armijo", "strict_decrease", or "none"
+/// history: if true, return an additional list[dict] with per-iteration trace rows
 #[pyfunction(
     signature = (
         residual,
@@ -37,7 +41,8 @@ use crate::bindings::manifold::PyVecManifold;
         ls_max_steps = None,
         c_armijo = None,
         verbose = None,
-        manifold = None
+        manifold = None,
+        history = None
     )
 )]
 fn gn(
@@ -61,7 +66,8 @@ fn gn(
     c_armijo: Option<f64>,
     verbose: Option<bool>,
     manifold: Option<Py<PyAny>>,
-) -> PyResult<(Vec<f64>, f64, usize, f64, f64, bool)> {
+    history: Option<bool>,
+) -> PyResult<Py<PyAny>> {
     let lambda = lambda_.unwrap_or(1e-3);
     if !lambda.is_finite() || lambda < 0.0 {
         return Err(PyValueError::new_err(format!(
@@ -138,6 +144,7 @@ fn gn(
         },
     };
 
+    let want_history = history.unwrap_or(false);
     let (space, manifold_err) = PyVecManifold::from_python(py, manifold)?;
     let solver = GaussNewton {
         space,
@@ -154,6 +161,7 @@ fn gn(
         tol_r: tol_r.unwrap_or(1e-6),
         tol_dq: tol_dx.unwrap_or(1e-6),
         verbose: verbose.unwrap_or(false),
+        collect_trace: want_history,
     };
 
     let err_state = PyErrState::default();
@@ -164,7 +172,7 @@ fn gn(
     let mut jacobian_fn = |x: &[f64], j_out: &mut [f64]| callbacks.jacobian_into(py, x, j_out);
     let mut project_fn = |x: &mut [f64]| callbacks.project_in_place(py, x);
 
-    let result = match run_mode {
+    let mut result = match run_mode {
         RunMode::Configured => solver.solve_with_fn_default_line_search(
             m,
             x0,
@@ -203,14 +211,35 @@ fn gn(
         return Err(e);
     }
 
-    Ok((
-        result.x,
-        result.cost,
-        result.iters,
-        result.r_norm,
-        result.dx_norm,
-        result.converged,
-    ))
+    if let Some(trace) = result.trace.take() {
+        let history_obj = trace_records_to_pylist(py, trace)?;
+        let out = PyTuple::new(
+            py,
+            [
+                result.x.into_py_any(py)?,
+                result.cost.into_py_any(py)?,
+                result.iters.into_py_any(py)?,
+                result.r_norm.into_py_any(py)?,
+                result.dx_norm.into_py_any(py)?,
+                result.converged.into_py_any(py)?,
+                history_obj,
+            ],
+        )?;
+        Ok(out.into_any().unbind())
+    } else {
+        let out = PyTuple::new(
+            py,
+            [
+                result.x.into_py_any(py)?,
+                result.cost.into_py_any(py)?,
+                result.iters.into_py_any(py)?,
+                result.r_norm.into_py_any(py)?,
+                result.dx_norm.into_py_any(py)?,
+                result.converged.into_py_any(py)?,
+            ],
+        )?;
+        Ok(out.into_any().unbind())
+    }
 }
 
 pub(crate) fn register(module: &Bound<PyModule>) -> PyResult<()> {
