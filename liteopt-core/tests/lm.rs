@@ -76,6 +76,7 @@ fn levenberg_marquardt_solver(max_iters: usize) -> LevenbergMarquardt<EuclideanS
         tol_r: 1e-9,
         tol_dq: 1e-12,
         verbose: false,
+        collect_trace: false,
     }
 }
 
@@ -205,4 +206,25 @@ fn levenberg_marquardt_behavior_supports_custom_step_policy() {
 
     assert!(res.converged, "custom policy should converge: {:?}", res);
     assert!(res.r_norm < 1e-6, "residual too large: {}", res.r_norm);
+}
+
+#[test]
+fn levenberg_marquardt_behavior_can_collect_trace_history() {
+    let mut solver = levenberg_marquardt_solver(200);
+    solver.collect_trace = true;
+    let problem = planar_two_link_problem();
+    let res = solver.solve_with_fn_default_line_search(
+        2,
+        vec![0.0, 0.0],
+        |x, r| problem.residual(x, r),
+        |x, j| problem.jacobian(x, j),
+        |_x| {},
+    );
+    let trace = res.trace.as_ref().expect("trace should be collected");
+
+    assert!(res.converged, "did not converge: {:?}", res);
+    assert!(!trace.is_empty(), "trace should contain at least one row");
+    assert_eq!(trace[0].solver, "lm");
+    assert_eq!(trace[0].note, Some("initial"));
+    assert!(trace.iter().any(|row| row.note == Some("accepted")));
 }

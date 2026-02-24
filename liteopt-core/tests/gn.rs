@@ -421,3 +421,24 @@ fn gauss_newton_simple_behavior_reports_stalled_for_non_improving_step() {
     );
     assert_eq!(res.dx_norm, 0.0);
 }
+
+#[test]
+fn gauss_newton_behavior_can_collect_trace_history() {
+    let problem = planar_two_link_problem();
+    let mut solver = gauss_newton_solver(EuclideanSpace, 200);
+    solver.collect_trace = true;
+    let res = solver.solve_with_fn_default_line_search(
+        2,
+        vec![0.0, 0.0],
+        |x, r| problem.residual_eval(x, r),
+        |x, j| problem.jacobian_eval(x, j),
+        |_x| {},
+    );
+    let trace = res.trace.as_ref().expect("trace should be collected");
+
+    assert!(res.converged, "did not converge: {:?}", res);
+    assert!(!trace.is_empty(), "trace should contain at least one row");
+    assert_eq!(trace[0].solver, "gn");
+    assert_eq!(trace[0].note, Some("initial"));
+    assert!(trace.iter().any(|row| row.note == Some("accepted")));
+}

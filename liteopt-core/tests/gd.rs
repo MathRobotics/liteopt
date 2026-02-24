@@ -16,6 +16,7 @@ fn gd_solver(step_size: f64, max_iters: usize, tol_grad: f64) -> GradientDescent
         max_iters,
         tol_grad,
         verbose: false,
+        collect_trace: false,
     }
 }
 
@@ -57,6 +58,7 @@ fn gradient_descent_behavior_converges_on_quadratic() {
         max_iters: 1000,
         tol_grad: 1e-6,
         verbose: false,
+        collect_trace: false,
     };
 
     let x0 = vec![0.0];
@@ -78,6 +80,7 @@ fn gradient_descent_behavior_converges_on_rosenbrock() {
         max_iters: 200_000,
         tol_grad: 1e-4,
         verbose: false,
+        collect_trace: false,
     };
 
     let x0 = vec![-1.2, 1.0];
@@ -241,4 +244,17 @@ fn gradient_descent_behavior_supports_cost_decrease_policy() {
 
     assert!(result.converged);
     assert!((result.x[0] - 3.0).abs() < 1e-6);
+}
+
+#[test]
+fn gradient_descent_behavior_can_collect_trace_history() {
+    let mut solver = gd_solver(0.1, 200, 1e-9);
+    solver.collect_trace = true;
+    let result = solver.minimize_with_fn(vec![0.0], quadratic_value, quadratic_gradient);
+    let trace = result.trace.as_ref().expect("trace should be collected");
+
+    assert!(result.converged);
+    assert!(!trace.is_empty(), "trace should contain at least one row");
+    assert_eq!(trace[0].solver, "gd");
+    assert!(trace.iter().any(|row| row.note == Some("converged")));
 }
