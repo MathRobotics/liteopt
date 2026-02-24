@@ -132,6 +132,27 @@ def test_gradient_descent_supports_custom_line_search_callback():
     assert calls["n"] > 0
 
 
+def test_gradient_descent_can_return_history_with_option():
+    x_star, f_star, converged, history = liteopt.gd(
+        quadratic_1d,
+        quadratic_1d_grad,
+        [0.0],
+        step_size=0.1,
+        max_iters=200,
+        tol_grad=1e-9,
+        history=True,
+    )
+
+    x_star = float(np.asarray(x_star, dtype=float)[0])
+    assert converged
+    assert abs(x_star - 3.0) < 1e-6
+    assert f_star < 1e-12
+    assert isinstance(history, list)
+    assert len(history) > 0
+    assert history[0]["solver"] == "gd"
+    assert any(row["note"] == "converged" for row in history)
+
+
 def test_gauss_newton_supports_custom_line_search_callback():
     calls = {"n": 0}
 
@@ -156,6 +177,56 @@ def test_gauss_newton_supports_custom_line_search_callback():
     assert cost < 1e-12
     assert r_norm < 1e-6
     assert calls["n"] > 0
+
+
+def test_gauss_newton_can_return_history_with_option():
+    x_star, cost, _, r_norm, _, ok, history = liteopt.gn(
+        residual_2d,
+        jacobian_2d,
+        x0=[0.0, 0.0],
+        max_iters=100,
+        tol_r=1e-10,
+        tol_dx=1e-10,
+        line_search=True,
+        verbose=False,
+        history=True,
+    )
+
+    x_star = np.asarray(x_star, dtype=float)
+    assert ok
+    assert np.allclose(x_star, GN_TARGET, atol=1e-6)
+    assert cost < 1e-12
+    assert r_norm < 1e-6
+    assert isinstance(history, list)
+    assert len(history) > 0
+    assert history[0]["solver"] == "gn"
+    assert history[0]["note"] == "initial"
+    assert any(row["note"] == "accepted" for row in history)
+
+
+def test_gauss_newton_history_option_works_with_custom_line_search():
+    def half_step(ctx):
+        return {"accepted": True, "alpha": 0.5 * float(ctx["alpha0"])}
+
+    x_star, cost, _, r_norm, _, ok, history = liteopt.gn(
+        residual_2d,
+        jacobian_2d,
+        x0=[0.0, 0.0],
+        max_iters=100,
+        tol_r=1e-10,
+        tol_dx=1e-10,
+        line_search=half_step,
+        verbose=False,
+        history=True,
+    )
+
+    x_star = np.asarray(x_star, dtype=float)
+    assert ok
+    assert np.allclose(x_star, GN_TARGET, atol=1e-6)
+    assert cost < 1e-12
+    assert r_norm < 1e-6
+    assert len(history) > 0
+    assert history[0]["solver"] == "gn"
 
 
 def test_gauss_newton_line_search_bool_flag_is_still_supported():

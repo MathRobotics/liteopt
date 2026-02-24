@@ -80,6 +80,57 @@ def test_levenberg_marquardt_supports_custom_line_search_callback():
     assert calls["n"] > 0
 
 
+def test_levenberg_marquardt_can_return_history_with_option():
+    x_star, cost, _, rnorm, _, ok, history = liteopt.lm(
+        residual,
+        jacobian,
+        x0=[0.0, 0.0],
+        max_iters=200,
+        verbose=False,
+        history=True,
+    )
+
+    x_star = np.asarray(x_star, dtype=float)
+    p_star = forward_kinematics(x_star)
+    err = np.linalg.norm(p_star - TARGET)
+
+    assert ok
+    assert cost < 1e-12
+    assert rnorm < 1e-6
+    assert err < 1e-6
+    assert isinstance(history, list)
+    assert len(history) > 0
+    assert history[0]["solver"] == "lm"
+    assert history[0]["note"] == "initial"
+    assert any(row["note"] == "accepted" for row in history)
+
+
+def test_levenberg_marquardt_history_option_works_with_custom_line_search():
+    def custom_policy(ctx):
+        return (True, 0.5 * float(ctx["alpha0"]))
+
+    x_star, cost, _, rnorm, _, ok, history = liteopt.lm(
+        residual,
+        jacobian,
+        x0=[0.0, 0.0],
+        max_iters=200,
+        verbose=False,
+        history=True,
+        line_search=custom_policy,
+    )
+
+    x_star = np.asarray(x_star, dtype=float)
+    p_star = forward_kinematics(x_star)
+    err = np.linalg.norm(p_star - TARGET)
+
+    assert ok
+    assert cost < 1e-12
+    assert rnorm < 1e-6
+    assert err < 1e-6
+    assert len(history) > 0
+    assert history[0]["solver"] == "lm"
+
+
 def test_levenberg_marquardt_raises_for_invalid_jacobian_size():
     def bad_jacobian(_x):
         return np.zeros((1, 1), dtype=float)
