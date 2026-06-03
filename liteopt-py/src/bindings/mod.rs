@@ -4,5 +4,6 @@ pub mod gn;
 pub mod line_search;
 pub mod lm;
 pub mod manifold;
+pub mod options;
 pub mod trace;
 pub mod validation;

@@ -68,7 +68,12 @@ import liteopt
 f = lambda x: (x[0] - 3.0) ** 2
 grad = lambda x: [2.0 * (x[0] - 3.0)]
 
-x_star, f_star, ok = liteopt.gd(f, grad, x0=[0.0], step_size=0.1)
+x_star, f_star, ok = liteopt.gd(
+    f,
+    grad,
+    x0=[0.0],
+    options={"step_size": 0.1},
+)
 print(ok, x_star, f_star)
 ```
 
@@ -87,7 +92,11 @@ def jacobian(_x):
     # `[[1.0, 0.0], [0.0, 1.0]]` raises TypeError.
     return [1.0, 0.0, 0.0, 1.0]
 
-x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(residual, jacobian, x0=[0.0, 0.0])
+x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(
+    residual,
+    x0=[0.0, 0.0],
+    jacobian=jacobian,
+)
 print(ok, x_star, cost)
 ```
 
@@ -116,7 +125,11 @@ but is not a fully matrix-free large-scale solver.
 Levenberg-Marquardt (least squares):
 
 ```python
-x_star, cost, iters, r_norm, dx_norm, ok = liteopt.lm(residual, jacobian, x0=[0.0, 0.0])
+x_star, cost, iters, r_norm, dx_norm, ok = liteopt.lm(
+    residual,
+    x0=[0.0, 0.0],
+    jacobian=jacobian,
+)
 print(ok, x_star, cost)
 ```
 
@@ -141,9 +154,9 @@ behavior:
 ```python
 x_star, cost, iters, r_norm, dx_norm, ok, history = liteopt.gn(
     residual,
-    jacobian,
     x0=[0.0, 0.0],
-    history=True,
+    jacobian=jacobian,
+    debug={"history": True},
 )
 ```
 
@@ -153,14 +166,16 @@ fixed damping and strict decrease checks:
 ```python
 x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(
     residual,
-    jacobian,
     x0=[0.0, 0.0],
-    lambda_=1e-8,
-    damping_update="fixed",
-    linear_system="normal_jtj",
-    line_search_method="strict_decrease",
-    line_search=True,
-    ls_max_steps=12,
+    jacobian=jacobian,
+    options={
+        "lambda": 1e-8,
+        "damping_update": "fixed",
+        "linear_system": "normal_jtj",
+        "line_search_method": "strict_decrease",
+        "line_search": True,
+        "ls_max_steps": 12,
+    },
 )
 ```
 
@@ -173,15 +188,66 @@ def half_step(ctx):
 
 x_star, cost, *_ = liteopt.gn(
     residual,
-    jacobian,
     x0=[0.0, 0.0],
-    line_search=half_step,
+    jacobian=jacobian,
+    options={"line_search": half_step},
 )
 ```
 
+## Release History
+
+### 0.1.9
+
+The Python solver APIs were simplified while keeping debugging explicit.
+Solver settings moved into an `options` dict, and trace/logging controls moved
+into a separate `debug` dict.
+
+Before:
+
+```python
+liteopt.gn(
+    residual,
+    x0=[0.0, 0.0],
+    jacobian=jacobian,
+    max_iters=100,
+    tol_r=1e-10,
+    line_search=True,
+    history=True,
+)
+```
+
+After:
+
+```python
+liteopt.gn(
+    residual,
+    x0=[0.0, 0.0],
+    jacobian=jacobian,
+    options={
+        "max_iters": 100,
+        "tol_r": 1e-10,
+        "line_search": True,
+    },
+    debug={"history": True},
+)
+```
+
+For `lm(...)`, move `lambda_`/`lambda`, `lambda_up`, `lambda_down`, `step_scale`,
+`max_iters`, `tol_r`, `tol_dx`, `line_search`, and `manifold` into `options`;
+move `verbose` and `history` into `debug`.
+
+For `gn(...)`, move `lambda_`/`lambda`, `step_scale`, `max_iters`, `tol_r`,
+`tol_dx`, `damping_update`, `linear_system`, `line_search_method`,
+`line_search`, `ls_beta`, `ls_min_step`, `ls_max_steps`, `c_armijo`,
+and `manifold` into `options`; move `verbose` and `history` into `debug`.
+
+For `gd(...)`, move `step_size`, `max_iters`, `tol_grad`, `line_search`, and
+`manifold` into `options`; move `verbose` and `history` into `debug`.
+
 Optional manifold callbacks:
 
-`gd(...)`, `gn(...)`, and `lm(...)` accept `manifold=...` with these methods:
+`gd(...)`, `gn(...)`, and `lm(...)` accept `options={"manifold": ...}` with
+these methods:
 - `retract(x, direction, alpha) -> list[float]`
 - `tangent_norm(v) -> float`
 - `scale(v, alpha) -> list[float]`

@@ -45,7 +45,9 @@ def jacobian_vec(q, v):
 
 
 def test_levenberg_marquardt_planar_two_link_converges_and_reaches_target():
-    x_star, cost, _, rnorm, _, ok = liteopt.lm(residual, jacobian, x0=[0.0, 0.0], verbose=False)
+    x_star, cost, _, rnorm, _, ok = liteopt.lm(
+        residual, x0=[0.0, 0.0], jacobian=jacobian
+    )
 
     x_star = np.asarray(x_star, dtype=float)
     p_star = forward_kinematics(x_star)
@@ -62,7 +64,6 @@ def test_levenberg_marquardt_accepts_jacobian_vec_without_dense_jacobian():
         residual,
         x0=[0.0, 0.0],
         jacobian_vec=jacobian_vec,
-        verbose=False,
     )
 
     x_star = np.asarray(x_star, dtype=float)
@@ -84,11 +85,9 @@ def test_levenberg_marquardt_supports_custom_line_search_callback():
 
     x_star, cost, _, rnorm, _, ok = liteopt.lm(
         residual,
-        jacobian,
         x0=[0.0, 0.0],
-        max_iters=200,
-        verbose=False,
-        line_search=custom_policy,
+        jacobian=jacobian,
+        options={"max_iters": 200, "line_search": custom_policy},
     )
 
     x_star = np.asarray(x_star, dtype=float)
@@ -102,14 +101,13 @@ def test_levenberg_marquardt_supports_custom_line_search_callback():
     assert calls["n"] > 0
 
 
-def test_levenberg_marquardt_can_return_history_with_option():
+def test_levenberg_marquardt_can_return_history_with_debug():
     x_star, cost, _, rnorm, _, ok, history = liteopt.lm(
         residual,
-        jacobian,
         x0=[0.0, 0.0],
-        max_iters=200,
-        verbose=False,
-        history=True,
+        jacobian=jacobian,
+        options={"max_iters": 200},
+        debug={"history": True},
     )
 
     x_star = np.asarray(x_star, dtype=float)
@@ -127,18 +125,19 @@ def test_levenberg_marquardt_can_return_history_with_option():
     assert any(row["note"] == "accepted" for row in history)
 
 
-def test_levenberg_marquardt_history_option_works_with_custom_line_search():
+def test_levenberg_marquardt_history_debug_works_with_custom_line_search():
     def custom_policy(ctx):
         return (True, 0.5 * float(ctx["alpha0"]))
 
     x_star, cost, _, rnorm, _, ok, history = liteopt.lm(
         residual,
-        jacobian,
         x0=[0.0, 0.0],
-        max_iters=200,
-        verbose=False,
-        history=True,
-        line_search=custom_policy,
+        jacobian=jacobian,
+        options={
+            "max_iters": 200,
+            "line_search": custom_policy,
+        },
+        debug={"history": True},
     )
 
     x_star = np.asarray(x_star, dtype=float)
@@ -158,27 +157,31 @@ def test_levenberg_marquardt_raises_for_invalid_jacobian_size():
         return np.zeros((1, 1), dtype=float)
 
     with pytest.raises(ValueError, match="jacobian size mismatch"):
-        liteopt.lm(residual, bad_jacobian, x0=[0.0, 0.0], verbose=False)
+        liteopt.lm(
+            residual,
+            x0=[0.0, 0.0],
+            jacobian=bad_jacobian,
+        )
 
 
 def test_levenberg_marquardt_requires_jacobian_or_jacobian_vec():
     with pytest.raises(ValueError, match="jacobian or jacobian_vec must be provided"):
-        liteopt.lm(residual, x0=[0.0, 0.0], verbose=False)
+        liteopt.lm(residual, x0=[0.0, 0.0])
 
 
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
-        ({"lambda_": -1.0}, "lambda_ must be finite and >= 0"),
-        ({"lambda_": float("nan")}, "lambda_ must be finite and >= 0"),
-        ({"lambda_up": 1.0}, "lambda_up must be finite and > 1"),
-        ({"lambda_down": 1.0}, "lambda_down must be finite and in \\(0,1\\)"),
-        ({"step_scale": 0.0}, "step_scale must be finite and in \\(0,1\\]"),
-        ({"step_scale": 1.5}, "step_scale must be finite and in \\(0,1\\]"),
-        ({"tol_r": -1.0}, "tol_r must be finite and >= 0"),
-        ({"tol_dx": float("inf")}, "tol_dx must be finite and >= 0"),
+        ({"lambda": -1.0}, "options.lambda must be finite and >= 0"),
+        ({"lambda": float("nan")}, "options.lambda must be finite and >= 0"),
+        ({"lambda_up": 1.0}, "options.lambda_up must be finite and > 1"),
+        ({"lambda_down": 1.0}, "options.lambda_down must be finite and in \\(0,1\\)"),
+        ({"step_scale": 0.0}, "options.step_scale must be finite and in \\(0,1\\]"),
+        ({"step_scale": 1.5}, "options.step_scale must be finite and in \\(0,1\\]"),
+        ({"tol_r": -1.0}, "options.tol_r must be finite and >= 0"),
+        ({"tol_dx": float("inf")}, "options.tol_dx must be finite and >= 0"),
     ],
 )
 def test_levenberg_marquardt_raises_for_invalid_solver_parameters(kwargs, message):
     with pytest.raises(ValueError, match=message):
-        liteopt.lm(residual, jacobian, x0=[0.0, 0.0], verbose=False, **kwargs)
+        liteopt.lm(residual, x0=[0.0, 0.0], jacobian=jacobian, options=kwargs)

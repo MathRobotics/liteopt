@@ -6,27 +6,33 @@ use pyo3::IntoPyObjectExt;
 use crate::bindings::callbacks::{PyErrState, PyObjectiveCallbacks};
 use crate::bindings::line_search::PyLineSearchPolicy;
 use crate::bindings::manifold::PyVecManifold;
+use crate::bindings::options::PyOptions;
 use crate::bindings::trace::trace_records_to_pylist;
+
+const GD_OPTIONS: &[&str] = &[
+    "step_size",
+    "max_iters",
+    "tol_grad",
+    "manifold",
+    "line_search",
+];
+const DEBUG_OPTIONS: &[&str] = &["history", "verbose"];
 
 /// Gradient Descent optimizer exposed to Python.
 ///
 /// f:    callable(x: list[float]) -> float
 /// grad: callable(x: list[float]) -> list[float]
-/// manifold: optional object with callbacks such as
-///   retract(x, direction, alpha) and tangent_norm(v)
-/// history: if true, return an additional list[dict] with per-iteration trace rows
+/// x0: initial point
+/// options: optional dict for solver settings
+/// debug: optional dict for trace and logging controls
 #[pyfunction(
     signature = (
         f,
         grad,
         x0,
-        step_size = None,
-        max_iters = None,
-        tol_grad = None,
-        verbose = None,
-        manifold = None,
-        line_search = None,
-        history = None
+        *,
+        options = None,
+        debug = None
     )
 )]
 fn gd(
@@ -34,29 +40,26 @@ fn gd(
     f: Py<PyAny>,
     grad: Py<PyAny>,
     x0: Vec<f64>,
-    step_size: Option<f64>,
-    max_iters: Option<usize>,
-    tol_grad: Option<f64>,
-    verbose: Option<bool>,
-    manifold: Option<Py<PyAny>>,
-    line_search: Option<Py<PyAny>>,
-    history: Option<bool>,
+    options: Option<Py<PyAny>>,
+    debug: Option<Py<PyAny>>,
 ) -> PyResult<Py<PyAny>> {
-    let want_history = history.unwrap_or(false);
-    let (space, manifold_err) = PyVecManifold::from_python(py, manifold)?;
+    let options = PyOptions::from_python(py, "gd", "options", options, GD_OPTIONS)?;
+    let debug = PyOptions::from_python(py, "gd", "debug", debug, DEBUG_OPTIONS)?;
+    let want_history = debug.bool("history")?.unwrap_or(false);
+    let (space, manifold_err) = PyVecManifold::from_python(py, options.py("manifold")?)?;
     let solver = GradientDescent {
         space,
-        step_size: step_size.unwrap_or(1e-3),
-        max_iters: max_iters.unwrap_or(100),
-        tol_grad: tol_grad.unwrap_or(1e-6),
-        verbose: verbose.unwrap_or(false),
+        step_size: options.f64("step_size")?.unwrap_or(1e-3),
+        max_iters: options.usize("max_iters")?.unwrap_or(100),
+        tol_grad: options.f64("tol_grad")?.unwrap_or(1e-6),
+        verbose: debug.bool("verbose")?.unwrap_or(false),
         collect_trace: want_history,
     };
 
     let err_state = PyErrState::default();
     let callbacks = PyObjectiveCallbacks::new(f, grad, err_state.clone());
 
-    let mut result = if let Some(line_search_obj) = line_search {
+    let mut result = if let Some(line_search_obj) = options.py("line_search")? {
         let mut policy = PyLineSearchPolicy::new(line_search_obj, err_state.clone());
         solver.minimize_with_fn_and_line_search(
             x0,

@@ -35,9 +35,7 @@ def run_gd() -> None:
         f,
         grad,
         x0=[0.0],
-        step_size=0.1,
-        max_iters=200,
-        tol_grad=1e-9,
+        options={"step_size": 0.1, "max_iters": 200, "tol_grad": 1e-9},
     )
     print(f"  converged={ok}, x*={x_star}, f*={f_star:.3e}")
 
@@ -55,12 +53,10 @@ def run_gn() -> None:
 
     x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(
         residual,
-        jacobian,
         x0=[0.0, 0.0],
-        max_iters=100,
-        tol_r=1e-12,
-        tol_dx=1e-12,
-        verbose=True,
+        jacobian=jacobian,
+        options={"max_iters": 100, "tol_r": 1e-12, "tol_dx": 1e-12},
+        debug={"verbose": True},
     )
     print(
         "  "
@@ -102,12 +98,10 @@ def run_lm() -> None:
 
     x_star, cost, iters, r_norm, dx_norm, ok = liteopt.lm(
         residual,
-        jacobian,
         x0=[0.0, 0.0],
-        max_iters=200,
-        tol_r=1e-12,
-        tol_dx=1e-12,
-        verbose=True,
+        jacobian=jacobian,
+        options={"max_iters": 200, "tol_r": 1e-12, "tol_dx": 1e-12},
+        debug={"verbose": True},
     )
     p_star = forward_kinematics(x_star)
     err = math.hypot(p_star[0] - target[0], p_star[1] - target[1])
