@@ -75,22 +75,23 @@ cargo build -p liteopt
 3. Build and install Python bindings (`liteopt-py`) into the uv-managed environment:
 
 ```bash
-uv sync --project liteopt-py --extra dev
-uv run --project liteopt-py maturin develop --manifest-path liteopt-py/Cargo.toml
+cd liteopt-py
+uv sync --extra dev
+uv run maturin develop --manifest-path Cargo.toml
 ```
 
 4. Run bundled `liteopt-py` examples:
 
 ```bash
-uv run --project liteopt-py python liteopt-py/example/run.py all
+uv run python example/run.py all
 ```
 
 Run a single example:
 
 ```bash
-uv run --project liteopt-py python liteopt-py/example/run.py gd
-uv run --project liteopt-py python liteopt-py/example/run.py gn
-uv run --project liteopt-py python liteopt-py/example/run.py lm
+uv run python example/run.py gd
+uv run python example/run.py gn
+uv run python example/run.py lm
 ```
 
 ## Workspace Structure
@@ -119,16 +120,18 @@ Run the same checks used by CI from the repository root:
 
 ```bash
 cargo test --workspace
-uv sync --project liteopt-py --extra dev
-uv run --project liteopt-py maturin develop --manifest-path liteopt-py/Cargo.toml --release
-uv run --project liteopt-py pytest liteopt-py/tests
+cd liteopt-py
+uv sync --extra dev
+uv run maturin develop --manifest-path Cargo.toml --release
+uv run pytest tests
 ```
 
 If the uv environment becomes inconsistent, recreate it:
 
 ```bash
 rm -rf liteopt-py/.venv
-uv sync --project liteopt-py --extra dev
+cd liteopt-py
+uv sync --extra dev
 ```
 
 ## Version Policy

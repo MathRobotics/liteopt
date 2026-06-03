@@ -15,25 +15,26 @@ cargo test --workspace
 3. Recreate or refresh the Python development environment:
 
 ```bash
-uv sync --project liteopt-py --extra dev --reinstall
+cd liteopt-py
+uv sync --extra dev --reinstall
 ```
 
 4. Build and install the Python bindings into the uv environment:
 
 ```bash
-uv run --project liteopt-py maturin develop --manifest-path liteopt-py/Cargo.toml --release
+uv run maturin develop --manifest-path Cargo.toml --release
 ```
 
 5. Run the Python tests:
 
 ```bash
-uv run --project liteopt-py pytest liteopt-py/tests
+uv run pytest tests
 ```
 
 6. Build distribution artifacts:
 
 ```bash
-uv run --project liteopt-py maturin build --manifest-path liteopt-py/Cargo.toml --release
+uv run maturin build --manifest-path Cargo.toml --release
 ```
 
 7. Inspect the wheel filename and metadata version, then create the release tag
