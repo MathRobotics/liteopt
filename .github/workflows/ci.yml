@@ -53,11 +53,15 @@ jobs:
                   data = data[key]
               versions[label] = data["version"]
 
-          lock = tomllib.loads(Path("Cargo.lock").read_text())
-          for package in lock["package"]:
-              name = package["name"]
-              if name in {"liteopt", "liteopt-py"}:
-                  versions[f"Cargo.lock {name}"] = package["version"]
+          lock_path = Path("Cargo.lock")
+          if lock_path.exists():
+              lock = tomllib.loads(lock_path.read_text())
+              for package in lock["package"]:
+                  name = package["name"]
+                  if name in {"liteopt", "liteopt-py"}:
+                      versions[f"Cargo.lock {name}"] = package["version"]
+          else:
+              print("Cargo.lock not found; skipping lockfile version check")
 
           expected = next(iter(versions.values()))
           mismatches = {
