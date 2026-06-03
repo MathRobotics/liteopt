@@ -11,11 +11,44 @@ use crate::bindings::callbacks::{PyErrState, PyLeastSquaresCallbacks};
 use crate::bindings::line_search::PyLineSearchPolicy;
 use crate::bindings::manifold::PyVecManifold;
 use crate::bindings::trace::trace_records_to_pylist;
+use crate::bindings::validation::{finite, finite_nonnegative, finite_open_unit, nonzero_usize};
+
+fn parse_damping_update(value: Option<String>) -> PyResult<GaussNewtonDampingUpdate> {
+    match value.as_deref().unwrap_or("adaptive") {
+        "adaptive" => Ok(GaussNewtonDampingUpdate::Adaptive),
+        "fixed" => Ok(GaussNewtonDampingUpdate::Fixed),
+        other => Err(PyValueError::new_err(format!(
+            "gn: damping_update must be 'adaptive' or 'fixed', got '{other}'"
+        ))),
+    }
+}
+
+fn parse_linear_system(value: Option<String>) -> PyResult<GaussNewtonLinearSystem> {
+    match value.as_deref().unwrap_or("left_jjt") {
+        "left_jjt" => Ok(GaussNewtonLinearSystem::LeftJjT),
+        "normal_jtj" => Ok(GaussNewtonLinearSystem::NormalJtJ),
+        other => Err(PyValueError::new_err(format!(
+            "gn: linear_system must be 'left_jjt' or 'normal_jtj', got '{other}'"
+        ))),
+    }
+}
+
+fn parse_line_search_method(value: Option<String>) -> PyResult<GaussNewtonLineSearchMethod> {
+    match value.as_deref().unwrap_or("armijo") {
+        "armijo" => Ok(GaussNewtonLineSearchMethod::Armijo),
+        "strict_decrease" => Ok(GaussNewtonLineSearchMethod::StrictDecrease),
+        "none" => Ok(GaussNewtonLineSearchMethod::None),
+        other => Err(PyValueError::new_err(format!(
+            "gn: line_search_method must be 'armijo', 'strict_decrease', or 'none', got '{other}'"
+        ))),
+    }
+}
 
 /// Nonlinear least squares solver exposed to Python.
 ///
 /// residual: callable(x: list[float]) -> list[float]           (len = m)
-/// jacobian: callable(x: list[float]) -> list[float]           (len = m*n, row-major)
+/// jacobian: optional callable(x: list[float]) -> list[float]  (len = m*n, row-major)
+/// jacobian_vec: optional callable(x, v) -> J(x) @ v           (len = m)
 /// line_search: bool or callable(ctx: dict) -> alpha or (accepted, alpha)
 /// damping_update: "adaptive" or "fixed"
 /// linear_system: "left_jjt" or "normal_jtj"
@@ -24,9 +57,10 @@ use crate::bindings::trace::trace_records_to_pylist;
 #[pyfunction(
     signature = (
         residual,
-        jacobian,
-        x0,
+        jacobian = None,
+        x0 = None,
         project = None,
+        jacobian_vec = None,
         lambda_ = None,
         step_scale = None,
         max_iters = None,
@@ -48,9 +82,10 @@ use crate::bindings::trace::trace_records_to_pylist;
 fn gn(
     py: Python<'_>,
     residual: Py<PyAny>,
-    jacobian: Py<PyAny>,
-    x0: Vec<f64>,
+    jacobian: Option<Py<PyAny>>,
+    x0: Option<Vec<f64>>,
     project: Option<Py<PyAny>>,
+    jacobian_vec: Option<Py<PyAny>>,
     lambda_: Option<f64>,
     step_scale: Option<f64>,
     max_iters: Option<usize>,
@@ -68,66 +103,22 @@ fn gn(
     manifold: Option<Py<PyAny>>,
     history: Option<bool>,
 ) -> PyResult<Py<PyAny>> {
-    let lambda = lambda_.unwrap_or(1e-3);
-    if !lambda.is_finite() || lambda < 0.0 {
-        return Err(PyValueError::new_err(format!(
-            "gn: lambda_ must be finite and >= 0, got {lambda}"
-        )));
-    }
-
-    let ls_beta = ls_beta.unwrap_or(0.5);
-    if !ls_beta.is_finite() || !(0.0 < ls_beta && ls_beta < 1.0) {
-        return Err(PyValueError::new_err(format!(
-            "gn: ls_beta must be finite and in (0,1), got {ls_beta}"
-        )));
-    }
-    let ls_min_step = ls_min_step.unwrap_or(1e-8);
-    if !ls_min_step.is_finite() || ls_min_step <= 0.0 {
-        return Err(PyValueError::new_err(format!(
-            "gn: ls_min_step must be finite and > 0, got {ls_min_step}"
-        )));
-    }
-    let ls_max_steps = ls_max_steps.unwrap_or(20);
-    if ls_max_steps == 0 {
-        return Err(PyValueError::new_err("gn: ls_max_steps must be > 0"));
-    }
-    let c_armijo = c_armijo.unwrap_or(1e-4);
-    if !c_armijo.is_finite() {
-        return Err(PyValueError::new_err(format!(
-            "gn: c_armijo must be finite, got {c_armijo}"
-        )));
-    }
-
-    let damping_update = match damping_update.as_deref().unwrap_or("adaptive") {
-        "adaptive" => GaussNewtonDampingUpdate::Adaptive,
-        "fixed" => GaussNewtonDampingUpdate::Fixed,
-        other => {
-            return Err(PyValueError::new_err(format!(
-                "gn: damping_update must be 'adaptive' or 'fixed', got '{other}'"
-            )));
-        }
+    let Some(x0) = x0 else {
+        return Err(PyValueError::new_err("gn: x0 must be provided"));
     };
 
-    let linear_system = match linear_system.as_deref().unwrap_or("left_jjt") {
-        "left_jjt" => GaussNewtonLinearSystem::LeftJjT,
-        "normal_jtj" => GaussNewtonLinearSystem::NormalJtJ,
-        other => {
-            return Err(PyValueError::new_err(format!(
-                "gn: linear_system must be 'left_jjt' or 'normal_jtj', got '{other}'"
-            )));
-        }
-    };
-
-    let line_search_method = match line_search_method.as_deref().unwrap_or("armijo") {
-        "armijo" => GaussNewtonLineSearchMethod::Armijo,
-        "strict_decrease" => GaussNewtonLineSearchMethod::StrictDecrease,
-        "none" => GaussNewtonLineSearchMethod::None,
-        other => {
-            return Err(PyValueError::new_err(format!(
-                "gn: line_search_method must be 'armijo', 'strict_decrease', or 'none', got '{other}'"
-            )));
-        }
-    };
+    let lambda = finite_nonnegative("gn: lambda_", lambda_.unwrap_or(1e-3))?;
+    let ls_beta = finite_open_unit("gn: ls_beta", ls_beta.unwrap_or(0.5))?;
+    let ls_min_step = crate::bindings::validation::finite_gt(
+        "gn: ls_min_step",
+        ls_min_step.unwrap_or(1e-8),
+        0.0,
+    )?;
+    let ls_max_steps = nonzero_usize("gn: ls_max_steps", ls_max_steps.unwrap_or(20))?;
+    let c_armijo = finite("gn: c_armijo", c_armijo.unwrap_or(1e-4))?;
+    let damping_update = parse_damping_update(damping_update)?;
+    let linear_system = parse_linear_system(linear_system)?;
+    let line_search_method = parse_line_search_method(line_search_method)?;
 
     enum RunMode {
         Configured,
@@ -165,7 +156,8 @@ fn gn(
     };
 
     let err_state = PyErrState::default();
-    let callbacks = PyLeastSquaresCallbacks::new(residual, jacobian, project, err_state.clone());
+    let callbacks =
+        PyLeastSquaresCallbacks::new(residual, jacobian, jacobian_vec, project, err_state.clone());
     let m = callbacks.infer_residual_dim(py, &x0)?;
 
     let mut residual_fn = |x: &[f64], r_out: &mut [f64]| callbacks.residual_into(py, x, r_out);

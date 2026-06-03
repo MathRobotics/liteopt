@@ -2,6 +2,15 @@
 
 A lightweight optimization library written in Rust with Python bindings.
 
+## Scope
+
+`liteopt` is aimed at small dense optimization problems where low dependency
+cost and readable implementation matter. It provides basic GD/GN/LM solvers,
+simple tolerances, simple step control, and optional debug traces.
+
+It is not intended to be a large-scale sparse optimizer, a SciPy replacement, a
+matrix-free numerical backend, or a BLAS/LAPACK-backed production solver.
+
 ## Installation
 
 Install from PyPI:
@@ -61,21 +70,6 @@ grad = lambda x: [2.0 * (x[0] - 3.0)]
 
 x_star, f_star, ok = liteopt.gd(f, grad, x0=[0.0], step_size=0.1)
 print(ok, x_star, f_star)
-
-# Collect per-iteration history (list[dict]) with an option:
-x_star, f_star, ok, history = liteopt.gd(
-    f, grad, x0=[0.0], step_size=0.1, history=True
-)
-print("history rows:", len(history))
-```
-
-Custom line search callback (GD):
-
-```python
-def half_step(ctx):
-    return {"accepted": True, "alpha": 0.5 * ctx["alpha0"]}
-
-x_star, f_star, ok = liteopt.gd(f, grad, x0=[0.0], line_search=half_step)
 ```
 
 Gauss-Newton (least squares):
@@ -95,18 +89,66 @@ def jacobian(_x):
 
 x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(residual, jacobian, x0=[0.0, 0.0])
 print(ok, x_star, cost)
-
-# Optional trace history:
-x_star, cost, iters, r_norm, dx_norm, ok, history = liteopt.gn(
-    residual, jacobian, x0=[0.0, 0.0], history=True
-)
 ```
 
 `jacobian` must be either:
 - row-major 1D list (`list[float]`, length = `m * n`)
 - 2D `numpy.ndarray` (`shape = (m, n)`)
 
-Gauss-Newton simple loop (fixed damping + strict-decrease line search):
+Alternatively, provide a Jacobian-vector product callback and omit `jacobian`:
+
+```python
+def jacobian_vec(x, v):
+    return jacobian(x) @ v
+
+x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(
+    residual,
+    x0=[0.0, 0.0],
+    jacobian_vec=jacobian_vec,
+)
+```
+
+`jacobian_vec(x, v)` must return `J(x) @ v` with length `m`. The current
+implementation reconstructs the dense Jacobian internally by applying
+`jacobian_vec` to basis vectors, so it avoids writing a dense Jacobian callback
+but is not a fully matrix-free large-scale solver.
+
+Levenberg-Marquardt (least squares):
+
+```python
+x_star, cost, iters, r_norm, dx_norm, ok = liteopt.lm(residual, jacobian, x0=[0.0, 0.0])
+print(ok, x_star, cost)
+```
+
+`lm(...)` also accepts `jacobian_vec=...` with the same `J(x) @ v` contract as
+`gn(...)`.
+
+## Convergence and Debug Options
+
+Convergence control is intentionally small:
+
+- `gd(...)`: `max_iters`, `tol_grad`
+- `gn(...)` and `lm(...)`: `max_iters`, `tol_r`, `tol_dx`
+
+Line search is available, but it is treated as optional step control rather
+than a broad globalization framework. The default API is meant for small dense
+problems; advanced users can pass a custom callback when they need direct
+control over step acceptance.
+
+Trace history is disabled by default. Enable it only when inspecting solver
+behavior:
+
+```python
+x_star, cost, iters, r_norm, dx_norm, ok, history = liteopt.gn(
+    residual,
+    jacobian,
+    x0=[0.0, 0.0],
+    history=True,
+)
+```
+
+Gauss-Newton exposes a compact configured line-search mode for users who need
+fixed damping and strict decrease checks:
 
 ```python
 x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(
@@ -118,31 +160,22 @@ x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(
     linear_system="normal_jtj",
     line_search_method="strict_decrease",
     line_search=True,
-    ls_beta=0.5,
-    ls_min_step=1e-8,
     ls_max_steps=12,
 )
-print(ok, x_star, cost)
 ```
 
-Custom line search callback (GN):
+Custom line search callbacks receive a small context dictionary and return an
+alpha or an `{ "accepted": bool, "alpha": float }` style result:
 
 ```python
 def half_step(ctx):
     return {"accepted": True, "alpha": 0.5 * ctx["alpha0"]}
 
-x_star, cost, *_ = liteopt.gn(residual, jacobian, x0=[0.0, 0.0], line_search=half_step)
-```
-
-Levenberg-Marquardt (least squares):
-
-```python
-x_star, cost, iters, r_norm, dx_norm, ok = liteopt.lm(residual, jacobian, x0=[0.0, 0.0])
-print(ok, x_star, cost)
-
-# Optional trace history:
-x_star, cost, iters, r_norm, dx_norm, ok, history = liteopt.lm(
-    residual, jacobian, x0=[0.0, 0.0], history=True
+x_star, cost, *_ = liteopt.gn(
+    residual,
+    jacobian,
+    x0=[0.0, 0.0],
+    line_search=half_step,
 )
 ```
 

@@ -40,8 +40,30 @@ def jacobian(q):
     )
 
 
+def jacobian_vec(q, v):
+    return jacobian(q) @ np.asarray(v, dtype=float)
+
+
 def test_levenberg_marquardt_planar_two_link_converges_and_reaches_target():
     x_star, cost, _, rnorm, _, ok = liteopt.lm(residual, jacobian, x0=[0.0, 0.0], verbose=False)
+
+    x_star = np.asarray(x_star, dtype=float)
+    p_star = forward_kinematics(x_star)
+    err = np.linalg.norm(p_star - TARGET)
+
+    assert ok
+    assert cost < 1e-12
+    assert rnorm < 1e-6
+    assert err < 1e-6
+
+
+def test_levenberg_marquardt_accepts_jacobian_vec_without_dense_jacobian():
+    x_star, cost, _, rnorm, _, ok = liteopt.lm(
+        residual,
+        x0=[0.0, 0.0],
+        jacobian_vec=jacobian_vec,
+        verbose=False,
+    )
 
     x_star = np.asarray(x_star, dtype=float)
     p_star = forward_kinematics(x_star)
@@ -137,3 +159,26 @@ def test_levenberg_marquardt_raises_for_invalid_jacobian_size():
 
     with pytest.raises(ValueError, match="jacobian size mismatch"):
         liteopt.lm(residual, bad_jacobian, x0=[0.0, 0.0], verbose=False)
+
+
+def test_levenberg_marquardt_requires_jacobian_or_jacobian_vec():
+    with pytest.raises(ValueError, match="jacobian or jacobian_vec must be provided"):
+        liteopt.lm(residual, x0=[0.0, 0.0], verbose=False)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"lambda_": -1.0}, "lambda_ must be finite and >= 0"),
+        ({"lambda_": float("nan")}, "lambda_ must be finite and >= 0"),
+        ({"lambda_up": 1.0}, "lambda_up must be finite and > 1"),
+        ({"lambda_down": 1.0}, "lambda_down must be finite and in \\(0,1\\)"),
+        ({"step_scale": 0.0}, "step_scale must be finite and in \\(0,1\\]"),
+        ({"step_scale": 1.5}, "step_scale must be finite and in \\(0,1\\]"),
+        ({"tol_r": -1.0}, "tol_r must be finite and >= 0"),
+        ({"tol_dx": float("inf")}, "tol_dx must be finite and >= 0"),
+    ],
+)
+def test_levenberg_marquardt_raises_for_invalid_solver_parameters(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        liteopt.lm(residual, jacobian, x0=[0.0, 0.0], verbose=False, **kwargs)

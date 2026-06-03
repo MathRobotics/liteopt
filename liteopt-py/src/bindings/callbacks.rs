@@ -145,7 +145,8 @@ impl PyObjectiveCallbacks {
 
 pub(crate) struct PyLeastSquaresCallbacks {
     residual_fn: Py<PyAny>,
-    jacobian_fn: Py<PyAny>,
+    jacobian_fn: Option<Py<PyAny>>,
+    jacobian_vec_fn: Option<Py<PyAny>>,
     project_fn: Option<Py<PyAny>>,
     err: PyErrState,
 }
@@ -153,13 +154,15 @@ pub(crate) struct PyLeastSquaresCallbacks {
 impl PyLeastSquaresCallbacks {
     pub(crate) fn new(
         residual_fn: Py<PyAny>,
-        jacobian_fn: Py<PyAny>,
+        jacobian_fn: Option<Py<PyAny>>,
+        jacobian_vec_fn: Option<Py<PyAny>>,
         project_fn: Option<Py<PyAny>>,
         err: PyErrState,
     ) -> Self {
         Self {
             residual_fn,
             jacobian_fn,
+            jacobian_vec_fn,
             project_fn,
             err,
         }
@@ -210,9 +213,57 @@ impl PyLeastSquaresCallbacks {
             return;
         }
 
+        if let Some(jacobian_fn) = &self.jacobian_fn {
+            let result: PyResult<Vec<f64>> = (|| {
+                let out = jacobian_fn.bind(py).call1((x.to_vec(),))?;
+                extract_jacobian_row_major(py, &out, j_out.len())
+            })();
+
+            match result {
+                Ok(j) => j_out.copy_from_slice(&j),
+                Err(e) => {
+                    self.err.set_once(e);
+                    j_out.fill(0.0);
+                }
+            }
+            return;
+        }
+
+        let Some(jacobian_vec_fn) = &self.jacobian_vec_fn else {
+            self.err.set_once(PyValueError::new_err(
+                "jacobian or jacobian_vec must be provided",
+            ));
+            j_out.fill(0.0);
+            return;
+        };
+
         let result: PyResult<Vec<f64>> = (|| {
-            let out = self.jacobian_fn.bind(py).call1((x.to_vec(),))?;
-            extract_jacobian_row_major(py, &out, j_out.len())
+            let n = x.len();
+            if n == 0 || j_out.len() % n != 0 {
+                return Err(PyValueError::new_err("jacobian size mismatch"));
+            }
+            let m = j_out.len() / n;
+            let mut dense = vec![0.0; j_out.len()];
+            let mut v = vec![0.0; n];
+
+            for col in 0..n {
+                v[col] = 1.0;
+                let out = jacobian_vec_fn.bind(py).call1((x.to_vec(), v.clone()))?;
+                let jv = extract_vec1(py, &out)?;
+                if jv.len() != m {
+                    return Err(PyValueError::new_err(format!(
+                        "jacobian_vec length mismatch: expected {}, got {}",
+                        m,
+                        jv.len()
+                    )));
+                }
+                for row in 0..m {
+                    dense[row * n + col] = jv[row];
+                }
+                v[col] = 0.0;
+            }
+
+            Ok(dense)
         })();
 
         match result {

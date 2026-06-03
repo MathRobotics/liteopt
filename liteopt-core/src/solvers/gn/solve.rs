@@ -1,8 +1,9 @@
 use crate::manifolds::space::Space;
-use crate::numerics::linalg::{
-    dot, jj_t_plus_lambda, jt_j_plus_lambda, jt_mul_vec, norm2, solve_linear_inplace,
-};
 use crate::problems::least_squares::LeastSquaresProblem;
+use crate::solvers::common::least_squares::{
+    commit_trial_state, complete_direction_diagnostics, residual_cost, residual_norm,
+    solve_left_jjt_direction, solve_normal_jtj_direction,
+};
 use crate::solvers::common::trace::{SolverTracer, TraceRow};
 
 use super::line_search::{
@@ -52,62 +53,25 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
     {
         jacobian_fn(x, &mut ws.j);
 
-        match self.linear_system {
-            GaussNewtonLinearSystem::LeftJjT => {
-                // A = J J^T + lambda I
-                jj_t_plus_lambda(&ws.j, m, n, lambda, &mut ws.a);
-
-                // y = A^{-1} r
-                ws.y.copy_from_slice(&ws.r);
-                if !solve_linear_inplace(&mut ws.a, &mut ws.y, m) {
-                    return None;
-                }
-
-                // dx = -J^T y
-                jt_mul_vec(&ws.j, m, n, &ws.y, &mut ws.dx);
-                for v in &mut ws.dx {
-                    *v = -*v;
-                }
-            }
+        let solved = match self.linear_system {
+            GaussNewtonLinearSystem::LeftJjT => solve_left_jjt_direction(
+                &ws.j, &ws.r, m, n, lambda, &mut ws.a, &mut ws.y, &mut ws.dx,
+            ),
             GaussNewtonLinearSystem::NormalJtJ => {
-                // A = J^T J + lambda I
-                jt_j_plus_lambda(&ws.j, m, n, lambda, &mut ws.an);
-
-                // rhs = -J^T r
-                jt_mul_vec(&ws.j, m, n, &ws.r, &mut ws.dx);
-                for v in &mut ws.dx {
-                    *v = -*v;
-                }
-                if !solve_linear_inplace(&mut ws.an, &mut ws.dx, n) {
-                    return None;
-                }
+                solve_normal_jtj_direction(&ws.j, &ws.r, m, n, lambda, &mut ws.an, &mut ws.dx)
             }
+        };
+        if !solved {
+            return None;
         }
 
-        let mut dx_norm = self.space.tangent_norm(&ws.dx);
-
-        if !need_dphi0 {
-            return Some(DirectionResult {
-                dx_norm,
-                dphi0: None,
-            });
-        }
-
-        // g = J^T r (gradient of 0.5||r||^2)
-        jt_mul_vec(&ws.j, m, n, &ws.r, &mut ws.g);
-        let mut dphi0 = dot(&ws.g, &ws.dx);
-        // Fallback if not descent (or NaN/Inf): dx = -g
-        if !dphi0.is_finite() || dphi0 >= 0.0 {
-            for i in 0..n {
-                ws.dx[i] = -ws.g[i];
-            }
-            dx_norm = self.space.tangent_norm(&ws.dx);
-            dphi0 = dot(&ws.g, &ws.dx);
-        }
+        let diagnostics =
+            complete_direction_diagnostics(&ws.j, &ws.r, m, n, &mut ws.dx, &mut ws.g, need_dphi0);
+        let dx_norm = self.space.tangent_norm(&ws.dx);
 
         Some(DirectionResult {
             dx_norm,
-            dphi0: Some(dphi0),
+            dphi0: diagnostics.dphi0,
         })
     }
 
@@ -128,7 +92,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         project(&mut ws.x_trial);
 
         residual_fn(&ws.x_trial, &mut ws.r_trial);
-        let cost_trial = 0.5 * dot(&ws.r_trial, &ws.r_trial);
+        let cost_trial = residual_cost(&ws.r_trial);
         cost_trial.is_finite().then_some(cost_trial)
     }
 
@@ -140,10 +104,15 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         cost_trial: f64,
         ws: &mut GaussNewtonWorkspace,
     ) {
-        x.copy_from_slice(&ws.x_trial);
-        ws.r.copy_from_slice(&ws.r_trial);
-        *cost = cost_trial;
-        *r_norm = norm2(&ws.r);
+        commit_trial_state(
+            x,
+            &mut ws.r,
+            cost,
+            r_norm,
+            &ws.x_trial,
+            &ws.r_trial,
+            cost_trial,
+        );
     }
 
     fn configured_armijo(&self) -> ArmijoBacktracking {
@@ -253,8 +222,8 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         let mut ws = GaussNewtonWorkspace::new(m, n);
 
         residual_fn(&x, &mut ws.r);
-        let mut cost = 0.5 * dot(&ws.r, &ws.r);
-        let mut r_norm = norm2(&ws.r);
+        let mut cost = residual_cost(&ws.r);
+        let mut r_norm = residual_norm(&ws.r);
 
         trace.emit(TraceRow::iter(0).cost(cost).r_norm(r_norm).note("initial"));
 

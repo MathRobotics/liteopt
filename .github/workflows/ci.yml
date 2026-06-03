@@ -25,16 +25,13 @@ jobs:
         uses: astral-sh/setup-uv@v3
 
       - name: Run Rust tests
-        run: cargo test --workspace --all-targets
+        run: cargo test --workspace
 
       - name: Sync Python dependencies
-        working-directory: liteopt-py
-        run: uv sync --extra dev
+        run: uv sync --project liteopt-py --extra dev
 
       - name: Build and install Python bindings
-        working-directory: liteopt-py
-        run: uv run --extra dev --no-sync maturin develop --manifest-path Cargo.toml --release
+        run: uv run --project liteopt-py --no-sync maturin develop --manifest-path liteopt-py/Cargo.toml --release
 
       - name: Run Python tests
-        working-directory: liteopt-py
-        run: uv run --extra dev --no-sync pytest tests
+        run: uv run --project liteopt-py --no-sync pytest liteopt-py/tests

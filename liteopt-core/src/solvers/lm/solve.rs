@@ -1,6 +1,9 @@
 use crate::manifolds::space::Space;
-use crate::numerics::linalg::{dot, jj_t_plus_lambda, jt_mul_vec, norm2, solve_linear_inplace};
 use crate::problems::least_squares::LeastSquaresProblem;
+use crate::solvers::common::least_squares::{
+    commit_trial_state, complete_direction_diagnostics, residual_cost, residual_norm,
+    solve_left_jjt_direction,
+};
 use crate::solvers::common::step_policy::{CostDecrease, LineSearchContext, LineSearchPolicy};
 use crate::solvers::common::trace::{SolverTracer, TraceRow};
 
@@ -44,42 +47,19 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
     {
         jacobian_fn(x, &mut ws.j);
 
-        // A = J J^T + lambda I
-        jj_t_plus_lambda(&ws.j, m, n, lambda, &mut ws.a);
-
-        // y = A^{-1} r
-        ws.y.copy_from_slice(&ws.r);
-        if !solve_linear_inplace(&mut ws.a, &mut ws.y, m) {
+        if !solve_left_jjt_direction(&ws.j, &ws.r, m, n, lambda, &mut ws.a, &mut ws.y, &mut ws.dx) {
             return None;
         }
 
-        // dx = -J^T y
-        jt_mul_vec(&ws.j, m, n, &ws.y, &mut ws.dx);
-        for v in &mut ws.dx {
-            *v = -*v;
-        }
-        let mut dx_norm = self.space.tangent_norm(&ws.dx);
+        let diagnostics =
+            complete_direction_diagnostics(&ws.j, &ws.r, m, n, &mut ws.dx, &mut ws.g, need_dphi0);
+        let dx_norm = self.space.tangent_norm(&ws.dx);
 
-        if !need_dphi0 {
-            return Some((dx_norm, None, false));
-        }
-
-        // g = J^T r  (gradient of 0.5||r||^2)
-        jt_mul_vec(&ws.j, m, n, &ws.r, &mut ws.g);
-        let mut dphi0 = dot(&ws.g, &ws.dx);
-        let mut used_steepest_descent = false;
-
-        // Fallback if not descent (or NaN/Inf): dx = -g
-        if !dphi0.is_finite() || dphi0 >= 0.0 {
-            for i in 0..n {
-                ws.dx[i] = -ws.g[i];
-            }
-            dx_norm = self.space.tangent_norm(&ws.dx);
-            dphi0 = dot(&ws.g, &ws.dx);
-            used_steepest_descent = true;
-        }
-
-        Some((dx_norm, Some(dphi0), used_steepest_descent))
+        Some((
+            dx_norm,
+            diagnostics.dphi0,
+            diagnostics.used_steepest_descent,
+        ))
     }
 
     fn evaluate_trial<R, P>(
@@ -99,7 +79,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
         project(&mut ws.x_trial);
 
         residual_fn(&ws.x_trial, &mut ws.r_trial);
-        let cost_trial = 0.5 * dot(&ws.r_trial, &ws.r_trial);
+        let cost_trial = residual_cost(&ws.r_trial);
         cost_trial.is_finite().then_some(cost_trial)
     }
 
@@ -111,10 +91,15 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
         cost_trial: f64,
         ws: &mut LmWorkspace,
     ) {
-        x.copy_from_slice(&ws.x_trial);
-        ws.r.copy_from_slice(&ws.r_trial);
-        *cost = cost_trial;
-        *r_norm = norm2(&ws.r);
+        commit_trial_state(
+            x,
+            &mut ws.r,
+            cost,
+            r_norm,
+            &ws.x_trial,
+            &ws.r_trial,
+            cost_trial,
+        );
     }
 
     /// Solve using a problem object.
@@ -177,8 +162,8 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
         let mut last_dx_norm = f64::NAN;
 
         residual_fn(&x, &mut ws.r);
-        let mut cost = 0.5 * dot(&ws.r, &ws.r);
-        let mut r_norm = norm2(&ws.r);
+        let mut cost = residual_cost(&ws.r);
+        let mut r_norm = residual_norm(&ws.r);
 
         trace.emit(TraceRow::iter(0).cost(cost).r_norm(r_norm).note("initial"));
 
