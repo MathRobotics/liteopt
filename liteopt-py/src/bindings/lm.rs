@@ -25,7 +25,6 @@ use crate::bindings::validation::{
         jacobian = None,
         x0 = None,
         project = None,
-        jacobian_vec = None,
         lambda_ = None,
         lambda_up = None,
         lambda_down = None,
@@ -36,7 +35,8 @@ use crate::bindings::validation::{
         verbose = None,
         manifold = None,
         line_search = None,
-        history = None
+        history = None,
+        jacobian_vec = None
     )
 )]
 fn lm(
@@ -45,7 +45,6 @@ fn lm(
     jacobian: Option<Py<PyAny>>,
     x0: Option<Vec<f64>>,
     project: Option<Py<PyAny>>,
-    jacobian_vec: Option<Py<PyAny>>,
     lambda_: Option<f64>,
     lambda_up: Option<f64>,
     lambda_down: Option<f64>,
@@ -57,6 +56,7 @@ fn lm(
     manifold: Option<Py<PyAny>>,
     line_search: Option<Py<PyAny>>,
     history: Option<bool>,
+    jacobian_vec: Option<Py<PyAny>>,
 ) -> PyResult<Py<PyAny>> {
     let Some(x0) = x0 else {
         return Err(PyValueError::new_err("lm: x0 must be provided"));

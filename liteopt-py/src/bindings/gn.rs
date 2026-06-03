@@ -60,7 +60,6 @@ fn parse_line_search_method(value: Option<String>) -> PyResult<GaussNewtonLineSe
         jacobian = None,
         x0 = None,
         project = None,
-        jacobian_vec = None,
         lambda_ = None,
         step_scale = None,
         max_iters = None,
@@ -76,7 +75,8 @@ fn parse_line_search_method(value: Option<String>) -> PyResult<GaussNewtonLineSe
         c_armijo = None,
         verbose = None,
         manifold = None,
-        history = None
+        history = None,
+        jacobian_vec = None
     )
 )]
 fn gn(
@@ -85,7 +85,6 @@ fn gn(
     jacobian: Option<Py<PyAny>>,
     x0: Option<Vec<f64>>,
     project: Option<Py<PyAny>>,
-    jacobian_vec: Option<Py<PyAny>>,
     lambda_: Option<f64>,
     step_scale: Option<f64>,
     max_iters: Option<usize>,
@@ -102,6 +101,7 @@ fn gn(
     verbose: Option<bool>,
     manifold: Option<Py<PyAny>>,
     history: Option<bool>,
+    jacobian_vec: Option<Py<PyAny>>,
 ) -> PyResult<Py<PyAny>> {
     let Some(x0) = x0 else {
         return Err(PyValueError::new_err("gn: x0 must be provided"));
