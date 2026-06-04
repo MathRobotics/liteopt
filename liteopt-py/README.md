@@ -16,9 +16,13 @@ matrix-free numerical backend, or a BLAS/LAPACK-backed production solver.
 Install from PyPI:
 
 ```bash
-uv venv
-source .venv/bin/activate
-uv pip install liteopt
+uv add liteopt
+```
+
+or:
+
+```bash
+pip install liteopt
 ```
 
 Install from source (development):
@@ -37,26 +41,7 @@ uv run python -c "import liteopt; print(liteopt.__file__)"
 
 ## Examples
 
-Run bundled examples from `liteopt-py/example/`:
-
-```bash
-cd liteopt-py
-uv run python example/run.py all
-```
-
-Or from repository root:
-
-```bash
-uv run --project liteopt-py python liteopt-py/example/run.py all
-```
-
-Run a single example:
-
-```bash
-uv run python example/run.py gd
-uv run python example/run.py gn
-uv run python example/run.py lm
-```
+Bundled examples are documented in [`example/README.md`](example/README.md).
 
 ## Quick Start
 
@@ -194,62 +179,55 @@ x_star, cost, *_ = liteopt.gn(
 )
 ```
 
-## Release History
-
-### 0.1.9
-
-The Python solver APIs were simplified while keeping debugging explicit.
-Solver settings moved into an `options` dict, and trace/logging controls moved
-into a separate `debug` dict.
-
-Before:
-
-```python
-liteopt.gn(
-    residual,
-    x0=[0.0, 0.0],
-    jacobian=jacobian,
-    max_iters=100,
-    tol_r=1e-10,
-    line_search=True,
-    history=True,
-)
-```
-
-After:
-
-```python
-liteopt.gn(
-    residual,
-    x0=[0.0, 0.0],
-    jacobian=jacobian,
-    options={
-        "max_iters": 100,
-        "tol_r": 1e-10,
-        "line_search": True,
-    },
-    debug={"history": True},
-)
-```
-
-For `lm(...)`, move `lambda_`/`lambda`, `lambda_up`, `lambda_down`, `step_scale`,
-`max_iters`, `tol_r`, `tol_dx`, `line_search`, and `manifold` into `options`;
-move `verbose` and `history` into `debug`.
-
-For `gn(...)`, move `lambda_`/`lambda`, `step_scale`, `max_iters`, `tol_r`,
-`tol_dx`, `damping_update`, `linear_system`, `line_search_method`,
-`line_search`, `ls_beta`, `ls_min_step`, `ls_max_steps`, `c_armijo`,
-and `manifold` into `options`; move `verbose` and `history` into `debug`.
-
-For `gd(...)`, move `step_size`, `max_iters`, `tol_grad`, `line_search`, and
-`manifold` into `options`; move `verbose` and `history` into `debug`.
-
-Optional manifold callbacks:
+## Optional Manifold Callbacks
 
 `gd(...)`, `gn(...)`, and `lm(...)` accept `options={"manifold": ...}` with
 these methods:
-- `retract(x, direction, alpha) -> list[float]`
-- `tangent_norm(v) -> float`
-- `scale(v, alpha) -> list[float]`
-- `add(x, v) -> list[float]`
-- `difference(x, y) -> list[float]`
+- `retract(x, direction, alpha) -> list[float]`: apply the local update
+  `alpha * direction` at point `x` and return the next point.
+- `tangent_norm(v) -> float`: return the norm used for convergence checks on a
+  tangent/update vector.
+- `scale(v, alpha) -> list[float]`: scale a tangent/update vector.
+- `add(x, v) -> list[float]`: add a tangent/update vector to a point.
+- `difference(x, y) -> list[float]`: return the local update vector from point
+  `x` to point `y`.
+
+Use `manifold.retract(...)` when the optimizer should update points on a
+manifold instead of using the default Euclidean step. For `gn(...)` and
+`lm(...)`, `project=...` is a lighter post-step projection hook for simple
+constraints.
+
+Minimal angle-wrapping example:
+
+```python
+import math
+import liteopt
+
+def wrap_angle(theta):
+    return (theta + math.pi) % (2.0 * math.pi) - math.pi
+
+class WrappedAngles:
+    def retract(self, x, direction, alpha):
+        return [wrap_angle(xi + alpha * di) for xi, di in zip(x, direction)]
+
+    def difference(self, x, y):
+        return [wrap_angle(yi - xi) for xi, yi in zip(x, y)]
+
+    def tangent_norm(self, v):
+        return math.sqrt(sum(vi * vi for vi in v))
+
+x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(
+    residual,
+    x0=[3.0 * math.pi, -2.0 * math.pi],
+    jacobian=jacobian,
+    options={"manifold": WrappedAngles()},
+)
+```
+
+The bundled `manifold` example in [`example/run.py`](example/run.py) shows the
+same pattern in a complete inverse-kinematics problem.
+
+## Migration Notes
+
+For release notes and breaking-change migration examples, see
+[`../RELEASE.md`](../RELEASE.md).
