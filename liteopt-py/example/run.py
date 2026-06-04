@@ -57,7 +57,6 @@ def run_gn() -> None:
         x0=[0.0, 0.0],
         jacobian=jacobian,
         options={"max_iters": 100, "tol_r": 1e-12, "tol_dx": 1e-12},
-        debug={"verbose": True},
     )
     print(
         "  "
@@ -102,7 +101,6 @@ def run_lm() -> None:
         x0=[0.0, 0.0],
         jacobian=jacobian,
         options={"max_iters": 200, "tol_r": 1e-12, "tol_dx": 1e-12},
-        debug={"verbose": True},
     )
     p_star = forward_kinematics(x_star)
     err = math.hypot(p_star[0] - target[0], p_star[1] - target[1])
