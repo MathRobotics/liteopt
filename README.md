@@ -2,209 +2,177 @@
 
 Lightweight optimization toolbox with a small Rust core and Python bindings.
 
-## Installation
+`liteopt` is for small dense optimization problems where low dependency cost,
+readable implementation, and quick debugging matter.
 
-Python package (PyPI):
+It currently provides:
 
-```bash
-uv venv
-source .venv/bin/activate
-uv pip install liteopt
-```
+- gradient descent
+- Gauss-Newton
+- Levenberg-Marquardt
+- optional trace/debug history
+- Rust core and Python bindings
 
-Python package from source (development):
+It is not intended to be a SciPy replacement, a large-scale sparse optimizer,
+or a BLAS/LAPACK-backed production linear algebra backend.
 
-```bash
-cd liteopt-py
-uv sync --extra dev
-uv run --extra dev maturin develop --manifest-path Cargo.toml
-uv run python -c "import liteopt; print(liteopt.__file__)"
-```
+## Quick Start
 
-Rust core in this workspace:
+Install the Python package:
 
 ```bash
-cargo test -p liteopt
+uv add liteopt
 ```
 
-## End-to-End Setup (Clone -> Build -> Python Example)
+or:
+
+```bash
+pip install liteopt
+```
+
+Copy and run a small optimization:
+
+```bash
+python - <<'PY'
+import liteopt
+
+def f(x):
+    return (x[0] - 3.0) ** 2
+
+def grad(x):
+    return [2.0 * (x[0] - 3.0)]
+
+x_star, f_star, ok = liteopt.gd(
+    f,
+    grad,
+    x0=[0.0],
+    options={"step_size": 0.1},
+)
+
+print(ok, x_star, f_star)
+PY
+```
+
+Run a small least-squares optimization with Gauss-Newton:
+
+```bash
+python - <<'PY'
+import liteopt
+
+target = [1.0, -2.0]
+
+def residual(x):
+    return [x[0] - target[0], x[1] - target[1]]
+
+def jacobian(_x):
+    return [1.0, 0.0, 0.0, 1.0]
+
+x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(
+    residual,
+    x0=[0.0, 0.0],
+    jacobian=jacobian,
+    options={"max_iters": 100, "tol_r": 1e-10},
+)
+
+print(ok, x_star, cost, iters, r_norm, dx_norm)
+PY
+```
+
+## From Source
 
 Prerequisites:
+
 - Rust toolchain (`cargo`)
 - Python 3.8+
 - `uv`
 
-1. Clone and move into this repository:
+Clone and build the Python bindings:
 
 ```bash
 git clone https://github.com/MathRobotics/liteopt.git
-cd liteopt
+cd liteopt/liteopt-py
+uv sync --extra dev
+uv run maturin develop --manifest-path Cargo.toml
 ```
 
-2. Build `liteopt-core`:
+Example commands are documented in
+[`liteopt-py/example/README.md`](liteopt-py/example/README.md).
+
+## Python API Shape
+
+The Python API keeps solver settings separate from debugging controls:
+
+```python
+_, _, _, history = liteopt.gd(
+    f,
+    grad,
+    x0=[0.0],
+    options={"step_size": 0.1, "max_iters": 200},
+    debug={"history": True},
+)
+```
+
+Least-squares solvers keep Jacobian callbacks explicit:
+
+```python
+liteopt.gn(
+    residual,
+    x0=[0.0, 0.0],
+    jacobian=jacobian,
+    options={"max_iters": 100, "tol_r": 1e-10},
+    debug={"history": True},
+)
+```
+
+- `options`: numerical settings such as tolerances, iteration limits, manifold,
+  and line-search policy
+- `debug`: trace/logging settings such as `history` and `verbose`
+- `jacobian`, `jacobian_vec`: least-squares problem callbacks
+
+For full Python usage, see [`liteopt-py/README.md`](liteopt-py/README.md).
+
+## Scope
+
+`liteopt` intentionally keeps the numerical backend small:
+
+- dense `Vec<f64>` least-squares data
+- basic GD/GN/LM solvers
+- simple convergence tolerances and maximum-iteration limits
+- simple step-control policies
+- optional trace history for debugging
+
+Non-goals:
+
+- large-scale sparse optimization
+- matrix-free large-scale solvers
+- automatic differentiation
+- broad constrained-optimization support
+- a large set of termination and globalization strategies
+
+## Development Checks
+
+From the repository root:
 
 ```bash
-cargo build -p liteopt
+cargo test --workspace
+cd liteopt-py
+uv sync --extra dev
+uv run maturin develop --manifest-path Cargo.toml --release
+uv run pytest tests
 ```
 
-3. Build and install Python bindings (`liteopt-py`) into the uv-managed environment:
+Run `maturin` commands from inside `liteopt-py`; this keeps `uv` and `maturin`
+using the Python package's `pyproject.toml`.
 
-```bash
-uv sync --project liteopt-py --extra dev
-uv run --project liteopt-py maturin develop --manifest-path liteopt-py/Cargo.toml
-```
+## Repository Layout
 
-4. Run bundled `liteopt-py` examples:
+- `liteopt-core/`: Rust solver, manifold, problem, and numerics code
+- `liteopt-py/`: PyO3 bindings and Python tests
+- `RELEASE.md`: release checklist and migration notes
 
-```bash
-uv run --project liteopt-py python liteopt-py/example/run.py all
-```
+## Version Policy
 
-Run a single example:
-
-```bash
-uv run --project liteopt-py python liteopt-py/example/run.py gd
-uv run --project liteopt-py python liteopt-py/example/run.py gn
-uv run --project liteopt-py python liteopt-py/example/run.py lm
-```
-
-## Workspace Structure
-
-- `liteopt-core/`: solver/manifold/problem definitions
-- `liteopt-py/`: PyO3 bindings (`liteopt.gd`, `liteopt.gn`, `liteopt.lm`)
-
-## Quick Examples
-
-Rust (Gradient Descent):
-
-```rust
-use liteopt::solvers::gd::GradientDescent;
-
-let solver = GradientDescent {
-    step_size: 0.1,
-    max_iters: 100,
-    tol_grad: 1e-9,
-    ..Default::default() // space is EuclideanSpace
-};
-let res = solver.minimize_with_fn(vec![0.0], |x| (x[0] - 3.0).powi(2), |x, g| g[0] = 2.0 * (x[0] - 3.0));
-println!("{:?}", res.x);
-```
-
-Rust (Gauss-Newton + custom line search):
-
-```rust
-use liteopt::solvers::gn::{GaussNewton, LineSearchContext, LineSearchPolicy, LineSearchResult};
-
-#[derive(Default)]
-struct MyLineSearch;
-
-impl LineSearchPolicy for MyLineSearch {
-    fn search(
-        &mut self,
-        ctx: &LineSearchContext,
-        eval_cost: &mut dyn FnMut(f64) -> Option<f64>,
-    ) -> LineSearchResult {
-        let alpha = 0.5 * ctx.alpha0;
-        LineSearchResult {
-            accepted: eval_cost(alpha).is_some(),
-            alpha,
-        }
-    }
-}
-
-let solver = GaussNewton {
-    lambda: 1e-3,
-    step_scale: 1.0,
-    max_iters: 20,
-    tol_r: 1e-12,
-    tol_dq: 1e-12,
-    ..Default::default() // space is EuclideanSpace
-};
-let mut line_search = MyLineSearch::default();
-let res = solver.solve_with_fn(
-    2,
-    vec![0.0, 0.0],
-    |x, r| { r[0] = x[0] - 1.0; r[1] = x[1] + 2.0; },
-    |_x, j| { j[0] = 1.0; j[1] = 0.0; j[2] = 0.0; j[3] = 1.0; },
-    |_x| {},
-    &mut line_search,
-);
-println!("{:?}", res.x);
-```
-
-Rust (Gauss-Newton simple loop mode):
-
-```rust
-use liteopt::solvers::gn::{
-    GaussNewton, GaussNewtonDampingUpdate, GaussNewtonLineSearchMethod, GaussNewtonLinearSystem,
-};
-
-let solver = GaussNewton {
-    lambda: 1e-8,
-    damping_update: GaussNewtonDampingUpdate::Fixed,
-    linear_system: GaussNewtonLinearSystem::NormalJtJ,
-    line_search_method: GaussNewtonLineSearchMethod::StrictDecrease,
-    ls_beta: 0.5,
-    ls_min_step: 1e-8,
-    ls_max_steps: 12,
-    max_iters: 20,
-    tol_r: 1e-10,
-    tol_dq: 1e-12,
-    ..Default::default()
-};
-let res = solver.solve_with_fn_default_line_search(
-    2,
-    vec![0.0, 0.0],
-    |x, r| { r[0] = x[0] - 1.0; r[1] = x[1] + 2.0; },
-    |_x, j| { j[0] = 1.0; j[1] = 0.0; j[2] = 0.0; j[3] = 1.0; },
-    |_x| {},
-);
-println!("converged={} x={:?}", res.converged, res.x);
-```
-
-Python examples are in `liteopt-py/example/` (`run.py`) and documented in `liteopt-py/README.md`.
-
-Bundled Rust examples in `liteopt-core/examples/` can be run with:
-
-```bash
-cargo run -p liteopt --example quadratic
-cargo run -p liteopt --example nonlinear_least_squares_demo
-cargo run -p liteopt --example my_manifold
-cargo run -p liteopt --example custom_line_search
-```
-
-## `liteopt-core` Module Policy
-
-- `manifolds/`
-  - `space.rs`: minimal `Space` trait (point/tangent abstraction)
-  - `euclidean.rs`: `EuclideanSpace` implementation
-- `problems/`
-  - `objective.rs`: generic objective trait
-  - `least_squares.rs`: nonlinear least-squares problem trait
-  - `test_functions.rs`: sample objectives (`Quadratic`, `Rosenbrock`)
-- `numerics/`
-  - `linalg.rs`: small dependency-free linear algebra helpers
-- `solvers/`
-  - `gd/`: gradient descent (`types.rs`, `solve.rs`)
-  - `gn/`: Gauss-Newton (`types.rs`, `workspace.rs`, `solve.rs`)
-  - `lm/`: Levenberg-Marquardt (`types.rs`, `workspace.rs`, `solve.rs`)
-  - `common/`: shared solver utilities
-
-## Current Design Direction
-
-- Keep trait surfaces small and explicit.
-- Separate `Point` and `Tangent` in `Space` to keep manifold extensions possible.
-- Keep least-squares solvers currently vector-based (`Vec<f64>`) for a lite implementation.
-
-## API Notes
-
-- Canonical Euclidean import: `liteopt::manifolds::EuclideanSpace`
-- If `space` is omitted, `GradientDescent::default()`, `GaussNewton::default()`, and `LevenbergMarquardt::default()` use `EuclideanSpace`.
-- Explicit manifold selection is available via `GradientDescent::with_space(...)`, `GaussNewton::with_space(...)`, and `LevenbergMarquardt::with_space(...)`.
-- Custom manifold sample: `liteopt-core/tests/gn.rs` (`MyManifold`)
-- Gauss-Newton solver import: `liteopt::solvers::gn::GaussNewton`
-- Custom line search for Gauss-Newton: implement `liteopt::solvers::gn::LineSearchPolicy`
-- GN algorithm selection: `damping_update`, `linear_system`, `line_search_method`
-- LM solver import: `liteopt::solvers::lm::LevenbergMarquardt`
-- Sample objective import: `liteopt::problems::test_functions::{Quadratic, Rosenbrock}`
-- Python custom manifold callbacks: see `liteopt-py/README.md`
+`liteopt-py/pyproject.toml` is the canonical version for Python package
+releases. The Rust crate versions in `liteopt-core/Cargo.toml` and
+`liteopt-py/Cargo.toml` are internal workspace metadata unless those crates are
+published separately.

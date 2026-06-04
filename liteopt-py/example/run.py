@@ -6,6 +6,7 @@ Usage:
   python example/run.py gd        # run one example
   python example/run.py gn
   python example/run.py lm
+  python example/run.py manifold
 """
 
 from __future__ import annotations
@@ -35,9 +36,7 @@ def run_gd() -> None:
         f,
         grad,
         x0=[0.0],
-        step_size=0.1,
-        max_iters=200,
-        tol_grad=1e-9,
+        options={"step_size": 0.1, "max_iters": 200, "tol_grad": 1e-9},
     )
     print(f"  converged={ok}, x*={x_star}, f*={f_star:.3e}")
 
@@ -55,12 +54,9 @@ def run_gn() -> None:
 
     x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(
         residual,
-        jacobian,
         x0=[0.0, 0.0],
-        max_iters=100,
-        tol_r=1e-12,
-        tol_dx=1e-12,
-        verbose=True,
+        jacobian=jacobian,
+        options={"max_iters": 100, "tol_r": 1e-12, "tol_dx": 1e-12},
     )
     print(
         "  "
@@ -102,12 +98,9 @@ def run_lm() -> None:
 
     x_star, cost, iters, r_norm, dx_norm, ok = liteopt.lm(
         residual,
-        jacobian,
         x0=[0.0, 0.0],
-        max_iters=200,
-        tol_r=1e-12,
-        tol_dx=1e-12,
-        verbose=True,
+        jacobian=jacobian,
+        options={"max_iters": 200, "tol_r": 1e-12, "tol_dx": 1e-12},
     )
     p_star = forward_kinematics(x_star)
     err = math.hypot(p_star[0] - target[0], p_star[1] - target[1])
@@ -119,10 +112,72 @@ def run_lm() -> None:
     )
 
 
+def run_manifold() -> None:
+    print("[manifold] Gauss-Newton with angle wrapping via manifold.retract")
+    target = [1.2, 0.6]
+    l1 = 1.0
+    l2 = 1.0
+
+    def wrap_angle(theta):
+        return (theta + math.pi) % (2.0 * math.pi) - math.pi
+
+    class WrappedAngles:
+        def retract(self, x, direction, alpha):
+            return [wrap_angle(xi + alpha * di) for xi, di in zip(x, direction)]
+
+        def difference(self, x, y):
+            return [wrap_angle(yi - xi) for xi, yi in zip(x, y)]
+
+        def tangent_norm(self, v):
+            return math.sqrt(sum(vi * vi for vi in v))
+
+    def forward_kinematics(q):
+        q1, q2 = q
+        return [
+            l1 * math.cos(q1) + l2 * math.cos(q1 + q2),
+            l1 * math.sin(q1) + l2 * math.sin(q1 + q2),
+        ]
+
+    def residual(q):
+        p = forward_kinematics(q)
+        return [p[0] - target[0], p[1] - target[1]]
+
+    def jacobian(q):
+        q1, q2 = q
+        s1 = math.sin(q1)
+        c1 = math.cos(q1)
+        s12 = math.sin(q1 + q2)
+        c12 = math.cos(q1 + q2)
+        return [
+            -l1 * s1 - l2 * s12,
+            -l2 * s12,
+            l1 * c1 + l2 * c12,
+            l2 * c12,
+        ]
+
+    x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(
+        residual,
+        x0=[3.0 * math.pi, -2.0 * math.pi],
+        jacobian=jacobian,
+        options={
+            "manifold": WrappedAngles(),
+            "max_iters": 200,
+            "tol_r": 1e-12,
+            "tol_dx": 1e-12,
+        },
+    )
+    print(
+        "  "
+        f"converged={ok}, q*={x_star}, cost={cost:.3e}, "
+        f"iters={iters}, ||r||={r_norm:.3e}, ||dx||={dx_norm:.3e}"
+    )
+
+
 EXAMPLES = {
     "gd": run_gd,
     "gn": run_gn,
     "lm": run_lm,
+    "manifold": run_manifold,
 }
 
 
@@ -138,7 +193,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.name == "all":
-        for name in ("gd", "gn", "lm"):
+        for name in ("gd", "gn", "lm", "manifold"):
             EXAMPLES[name]()
             print("")
         return

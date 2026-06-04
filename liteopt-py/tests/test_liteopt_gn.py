@@ -40,8 +40,31 @@ def jacobian(q):
     )
 
 
+def jacobian_vec(q, v):
+    return jacobian(q) @ np.asarray(v, dtype=float)
+
+
 def test_gauss_newton_planar_two_link_converges_and_reaches_target():
-    x_star, cost, _, rnorm, _, ok = liteopt.gn(residual, jacobian, x0=[0.0, 0.0], verbose=False)
+    x_star, cost, _, rnorm, _, ok = liteopt.gn(
+        residual, x0=[0.0, 0.0], jacobian=jacobian
+    )
+
+    x_star = np.asarray(x_star, dtype=float)
+    p_star = forward_kinematics(x_star)
+    err = np.linalg.norm(p_star - TARGET)
+
+    assert ok
+    assert cost < 1e-12
+    assert rnorm < 1e-6
+    assert err < 1e-6
+
+
+def test_gauss_newton_accepts_jacobian_vec_without_dense_jacobian():
+    x_star, cost, _, rnorm, _, ok = liteopt.gn(
+        residual,
+        x0=[0.0, 0.0],
+        jacobian_vec=jacobian_vec,
+    )
 
     x_star = np.asarray(x_star, dtype=float)
     p_star = forward_kinematics(x_star)
@@ -56,17 +79,15 @@ def test_gauss_newton_planar_two_link_converges_and_reaches_target():
 def test_gauss_newton_respects_maximum_iterations():
     _, cost_short, iters_short, rnorm_short, _, ok_short = liteopt.gn(
         residual,
-        jacobian,
         x0=[0.0, 0.0],
-        max_iters=1,
-        verbose=False,
+        jacobian=jacobian,
+        options={"max_iters": 1},
     )
     _, cost_full, iters_full, rnorm_full, _, ok_full = liteopt.gn(
         residual,
-        jacobian,
         x0=[0.0, 0.0],
-        max_iters=100,
-        verbose=False,
+        jacobian=jacobian,
+        options={"max_iters": 100},
     )
 
     assert iters_short == 1
@@ -82,4 +103,13 @@ def test_gauss_newton_raises_for_invalid_jacobian_size():
         return np.zeros((1, 1), dtype=float)
 
     with pytest.raises(ValueError, match="jacobian size mismatch"):
-        liteopt.gn(residual, bad_jacobian, x0=[0.0, 0.0], verbose=False)
+        liteopt.gn(
+            residual,
+            x0=[0.0, 0.0],
+            jacobian=bad_jacobian,
+        )
+
+
+def test_gauss_newton_requires_jacobian_or_jacobian_vec():
+    with pytest.raises(ValueError, match="jacobian or jacobian_vec must be provided"):
+        liteopt.gn(residual, x0=[0.0, 0.0])

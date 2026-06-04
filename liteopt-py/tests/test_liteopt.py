@@ -46,9 +46,7 @@ def test_gradient_descent_rosenbrock_converges_and_reduces_objective():
         rosenbrock,
         rosenbrock_grad,
         x0,
-        step_size=1e-3,
-        max_iters=200_000,
-        tol_grad=1e-4,
+        options={"step_size": 1e-3, "max_iters": 200_000, "tol_grad": 1e-4},
     )
 
     x_star = np.asarray(x_star, dtype=float)
@@ -65,17 +63,13 @@ def test_gradient_descent_respects_maximum_iterations():
         quadratic_1d,
         quadratic_1d_grad,
         x0,
-        step_size=0.1,
-        max_iters=1,
-        tol_grad=1e-12,
+        options={"step_size": 0.1, "max_iters": 1, "tol_grad": 1e-12},
     )
     _, f_many_steps, converged_many_steps = liteopt.gd(
         quadratic_1d,
         quadratic_1d_grad,
         x0,
-        step_size=0.1,
-        max_iters=200,
-        tol_grad=1e-9,
+        options={"step_size": 0.1, "max_iters": 200, "tol_grad": 1e-9},
     )
 
     assert not converged_one_step
@@ -90,17 +84,13 @@ def test_gradient_descent_step_size_changes_single_step_result():
         quadratic_1d,
         quadratic_1d_grad,
         x0,
-        step_size=0.01,
-        max_iters=1,
-        tol_grad=0.0,
+        options={"step_size": 0.01, "max_iters": 1, "tol_grad": 0.0},
     )
     x_large, _, _ = liteopt.gd(
         quadratic_1d,
         quadratic_1d_grad,
         x0,
-        step_size=0.1,
-        max_iters=1,
-        tol_grad=0.0,
+        options={"step_size": 0.1, "max_iters": 1, "tol_grad": 0.0},
     )
 
     x_small = float(np.asarray(x_small, dtype=float)[0])
@@ -119,10 +109,12 @@ def test_gradient_descent_supports_custom_line_search_callback():
         quadratic_1d,
         quadratic_1d_grad,
         [0.0],
-        step_size=0.2,
-        max_iters=200,
-        tol_grad=1e-9,
-        line_search=half_step,
+        options={
+            "step_size": 0.2,
+            "max_iters": 200,
+            "tol_grad": 1e-9,
+            "line_search": half_step,
+        },
     )
 
     x_star = float(np.asarray(x_star, dtype=float)[0])
@@ -132,15 +124,13 @@ def test_gradient_descent_supports_custom_line_search_callback():
     assert calls["n"] > 0
 
 
-def test_gradient_descent_can_return_history_with_option():
+def test_gradient_descent_can_return_history_with_debug():
     x_star, f_star, converged, history = liteopt.gd(
         quadratic_1d,
         quadratic_1d_grad,
         [0.0],
-        step_size=0.1,
-        max_iters=200,
-        tol_grad=1e-9,
-        history=True,
+        options={"step_size": 0.1, "max_iters": 200, "tol_grad": 1e-9},
+        debug={"history": True},
     )
 
     x_star = float(np.asarray(x_star, dtype=float)[0])
@@ -162,13 +152,14 @@ def test_gauss_newton_supports_custom_line_search_callback():
 
     x_star, cost, _, r_norm, _, ok = liteopt.gn(
         residual_2d,
-        jacobian_2d,
         x0=[0.0, 0.0],
-        max_iters=100,
-        tol_r=1e-10,
-        tol_dx=1e-10,
-        line_search=half_step,
-        verbose=False,
+        jacobian=jacobian_2d,
+        options={
+            "max_iters": 100,
+            "tol_r": 1e-10,
+            "tol_dx": 1e-10,
+            "line_search": half_step,
+        },
     )
 
     x_star = np.asarray(x_star, dtype=float)
@@ -179,17 +170,18 @@ def test_gauss_newton_supports_custom_line_search_callback():
     assert calls["n"] > 0
 
 
-def test_gauss_newton_can_return_history_with_option():
+def test_gauss_newton_can_return_history_with_debug():
     x_star, cost, _, r_norm, _, ok, history = liteopt.gn(
         residual_2d,
-        jacobian_2d,
         x0=[0.0, 0.0],
-        max_iters=100,
-        tol_r=1e-10,
-        tol_dx=1e-10,
-        line_search=True,
-        verbose=False,
-        history=True,
+        jacobian=jacobian_2d,
+        options={
+            "max_iters": 100,
+            "tol_r": 1e-10,
+            "tol_dx": 1e-10,
+            "line_search": True,
+        },
+        debug={"history": True},
     )
 
     x_star = np.asarray(x_star, dtype=float)
@@ -204,20 +196,21 @@ def test_gauss_newton_can_return_history_with_option():
     assert any(row["note"] == "accepted" for row in history)
 
 
-def test_gauss_newton_history_option_works_with_custom_line_search():
+def test_gauss_newton_history_debug_works_with_custom_line_search():
     def half_step(ctx):
         return {"accepted": True, "alpha": 0.5 * float(ctx["alpha0"])}
 
     x_star, cost, _, r_norm, _, ok, history = liteopt.gn(
         residual_2d,
-        jacobian_2d,
         x0=[0.0, 0.0],
-        max_iters=100,
-        tol_r=1e-10,
-        tol_dx=1e-10,
-        line_search=half_step,
-        verbose=False,
-        history=True,
+        jacobian=jacobian_2d,
+        options={
+            "max_iters": 100,
+            "tol_r": 1e-10,
+            "tol_dx": 1e-10,
+            "line_search": half_step,
+        },
+        debug={"history": True},
     )
 
     x_star = np.asarray(x_star, dtype=float)
@@ -232,13 +225,14 @@ def test_gauss_newton_history_option_works_with_custom_line_search():
 def test_gauss_newton_line_search_bool_flag_is_still_supported():
     x_star, cost, _, r_norm, _, ok = liteopt.gn(
         residual_2d,
-        jacobian_2d,
         x0=[0.0, 0.0],
-        max_iters=100,
-        tol_r=1e-10,
-        tol_dx=1e-10,
-        line_search=False,
-        verbose=False,
+        jacobian=jacobian_2d,
+        options={
+            "max_iters": 100,
+            "tol_r": 1e-10,
+            "tol_dx": 1e-10,
+            "line_search": False,
+        },
     )
 
     x_star = np.asarray(x_star, dtype=float)
@@ -251,20 +245,21 @@ def test_gauss_newton_line_search_bool_flag_is_still_supported():
 def test_gauss_newton_mode_simple_converges():
     x_star, cost, _, r_norm, _, ok = liteopt.gn(
         residual_2d,
-        jacobian_2d,
         x0=[0.0, 0.0],
-        damping_update="fixed",
-        linear_system="normal_jtj",
-        line_search_method="strict_decrease",
-        lambda_=1e-8,
-        max_iters=100,
-        tol_r=1e-10,
-        tol_dx=1e-10,
-        line_search=True,
-        ls_beta=0.5,
-        ls_min_step=1e-8,
-        ls_max_steps=12,
-        verbose=False,
+        jacobian=jacobian_2d,
+        options={
+            "damping_update": "fixed",
+            "linear_system": "normal_jtj",
+            "line_search_method": "strict_decrease",
+            "lambda": 1e-8,
+            "max_iters": 100,
+            "tol_r": 1e-10,
+            "tol_dx": 1e-10,
+            "line_search": True,
+            "ls_beta": 0.5,
+            "ls_min_step": 1e-8,
+            "ls_max_steps": 12,
+        },
     )
 
     x_star = np.asarray(x_star, dtype=float)
@@ -283,15 +278,16 @@ def test_gauss_newton_mode_simple_reports_non_converged_when_no_improving_step_e
 
     _, cost, _, r_norm, step_norm, ok = liteopt.gn(
         residual_const,
-        jacobian_zero,
         x0=[0.0],
-        damping_update="fixed",
-        linear_system="normal_jtj",
-        line_search_method="strict_decrease",
-        lambda_=1e-6,
-        tol_dx=0.0,
-        line_search=True,
-        verbose=False,
+        jacobian=jacobian_zero,
+        options={
+            "damping_update": "fixed",
+            "linear_system": "normal_jtj",
+            "line_search_method": "strict_decrease",
+            "lambda": 1e-6,
+            "tol_dx": 0.0,
+            "line_search": True,
+        },
     )
 
     assert not ok
@@ -304,7 +300,33 @@ def test_gauss_newton_mode_simple_rejects_invalid_line_search_parameters():
     with pytest.raises(ValueError, match="ls_beta"):
         liteopt.gn(
             residual_2d,
-            jacobian_2d,
             x0=[0.0, 0.0],
-            ls_beta=1.2,
+            jacobian=jacobian_2d,
+            options={"ls_beta": 1.2},
+        )
+
+
+def test_options_must_be_dict_and_reject_unknown_keys():
+    with pytest.raises(ValueError, match="options must be a dict"):
+        liteopt.gd(quadratic_1d, quadratic_1d_grad, [0.0], options=[("step_size", 0.1)])
+
+    with pytest.raises(ValueError, match="unknown options key 'unknown'"):
+        liteopt.gd(
+            quadratic_1d,
+            quadratic_1d_grad,
+            [0.0],
+            options={"unknown": 1.0},
+        )
+
+
+def test_debug_must_be_dict_and_reject_unknown_keys():
+    with pytest.raises(ValueError, match="debug must be a dict"):
+        liteopt.gd(quadratic_1d, quadratic_1d_grad, [0.0], debug=[("history", True)])
+
+    with pytest.raises(ValueError, match="unknown debug key 'unknown'"):
+        liteopt.gd(
+            quadratic_1d,
+            quadratic_1d_grad,
+            [0.0],
+            debug={"unknown": True},
         )

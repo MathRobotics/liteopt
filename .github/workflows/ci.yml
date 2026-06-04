@@ -24,8 +24,63 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v3
 
+      - name: Check package versions match
+        run: |
+          python - <<'PY'
+          import sys
+          import tomllib
+          from pathlib import Path
+
+          files = {
+              "liteopt-py/pyproject.toml [project]": (
+                  Path("liteopt-py/pyproject.toml"),
+                  ("project",),
+              ),
+              "liteopt-core/Cargo.toml [package]": (
+                  Path("liteopt-core/Cargo.toml"),
+                  ("package",),
+              ),
+              "liteopt-py/Cargo.toml [package]": (
+                  Path("liteopt-py/Cargo.toml"),
+                  ("package",),
+              ),
+          }
+
+          versions = {}
+          for label, (path, keys) in files.items():
+              data = tomllib.loads(path.read_text())
+              for key in keys:
+                  data = data[key]
+              versions[label] = data["version"]
+
+          lock_path = Path("Cargo.lock")
+          if lock_path.exists():
+              lock = tomllib.loads(lock_path.read_text())
+              for package in lock["package"]:
+                  name = package["name"]
+                  if name in {"liteopt", "liteopt-py"}:
+                      versions[f"Cargo.lock {name}"] = package["version"]
+          else:
+              print("Cargo.lock not found; skipping lockfile version check")
+
+          expected = next(iter(versions.values()))
+          mismatches = {
+              label: version
+              for label, version in versions.items()
+              if version != expected
+          }
+
+          if mismatches:
+              print("Package versions must match:")
+              for label, version in versions.items():
+                  print(f"  {label}: {version}")
+              sys.exit(1)
+
+          print(f"Package versions match: {expected}")
+          PY
+
       - name: Run Rust tests
-        run: cargo test --workspace --all-targets
+        run: cargo test --workspace
 
       - name: Sync Python dependencies
         working-directory: liteopt-py
@@ -33,8 +88,8 @@ jobs:
 
       - name: Build and install Python bindings
         working-directory: liteopt-py
-        run: uv run --extra dev --no-sync maturin develop --manifest-path Cargo.toml --release
+        run: uv run --no-sync maturin develop --manifest-path Cargo.toml --release
 
       - name: Run Python tests
         working-directory: liteopt-py
-        run: uv run --extra dev --no-sync pytest tests
+        run: uv run --no-sync pytest tests
