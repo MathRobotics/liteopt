@@ -2,3 +2,5 @@
 cargo.lock
 uv.lock
 __pycache__
+._**
+/liteopt-py/dist/

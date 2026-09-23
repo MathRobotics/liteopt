@@ -16,6 +16,22 @@ It currently provides:
 It is not intended to be a SciPy replacement, a large-scale sparse optimizer,
 or a BLAS/LAPACK-backed production linear algebra backend.
 
+## Python Solver Selection
+
+| Problem | Usage |
+|---|---|
+| General differentiable objective | `liteopt.gd(f, grad, x0, ...)` |
+| Least squares with Gauss-Newton | `liteopt.least_squares(residual, x0, method="gn", ...)` |
+| Least squares with Levenberg-Marquardt | `liteopt.least_squares(residual, x0, method="lm", ...)` |
+
+`least_squares` defaults to `method="lm"`. Both methods share the residual,
+Jacobian, and result interface; method-specific settings go in `options`.
+The direct `gn()` and `lm()` functions remain available. GN uses an undamped
+direction with Armijo backtracking. LM uses adaptive damping and defaults to
+a single cost-decrease check; set `options={"line_search_method": "armijo"}`
+or `"strict_decrease"` to enable LM backtracking. GN requires a nonsingular
+linear system; choose LM for problems needing damping.
+
 ## Quick Start
 
 Install the Python package:
@@ -67,8 +83,9 @@ def residual(x):
 def jacobian(_x):
     return [1.0, 0.0, 0.0, 1.0]
 
-x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(
+x_star, cost, iters, r_norm, dx_norm, ok = liteopt.least_squares(
     residual,
+    method="gn",
     x0=[0.0, 0.0],
     jacobian=jacobian,
     options={"max_iters": 100, "tol_r": 1e-10},
@@ -115,8 +132,9 @@ _, _, _, history = liteopt.gd(
 Least-squares solvers keep Jacobian callbacks explicit:
 
 ```python
-liteopt.gn(
+liteopt.least_squares(
     residual,
+    method="gn",
     x0=[0.0, 0.0],
     jacobian=jacobian,
     options={"max_iters": 100, "tol_r": 1e-10},
@@ -127,7 +145,7 @@ liteopt.gn(
 - `options`: numerical settings such as tolerances, iteration limits, manifold,
   and line-search policy
 - `debug`: trace/logging settings such as `history` and `verbose`
-- `jacobian`, `jacobian_vec`: least-squares problem callbacks
+- `jacobian`, or `jacobian_vec` + `jacobian_transpose_vec`: least-squares derivatives
 
 For full Python usage, see [`liteopt-py/README.md`](liteopt-py/README.md).
 
@@ -144,7 +162,7 @@ For full Python usage, see [`liteopt-py/README.md`](liteopt-py/README.md).
 Non-goals:
 
 - large-scale sparse optimization
-- matrix-free large-scale solvers
+- preconditioners and specialized large-scale solvers
 - automatic differentiation
 - broad constrained-optimization support
 - a large set of termination and globalization strategies
@@ -169,6 +187,7 @@ using the Python package's `pyproject.toml`.
 - `liteopt-core/`: Rust solver, manifold, problem, and numerics code
 - `liteopt-py/`: PyO3 bindings and Python tests
 - `RELEASE.md`: release checklist and migration notes
+- [benchmarks/README.md](benchmarks/README.md): dense solver accuracy and timing comparison
 
 ## Version Policy
 
@@ -176,3 +195,29 @@ using the Python package's `pyproject.toml`.
 releases. The Rust crate versions in `liteopt-core/Cargo.toml` and
 `liteopt-py/Cargo.toml` are internal workspace metadata unless those crates are
 published separately.
+
+GD supports built-in line searches through `options={"line_search_method": "armijo"}`
+(`none`, `cost_decrease`, and `strict_decrease` are also available; default: `none`).
+Use `debug={"info": True}` to return `(x, f, ok, info)`, where `info` includes
+`iters`, `grad_norm`, `status`, `nfev`, and `njev`. With history enabled, the
+return is `(x, f, ok, history, info)`. See [GD diagnostics](liteopt-py/README.md#gd-diagnostics).
+
+GN and LM also support `debug={"info": True}` (appended after optional history).
+See [common diagnostics and search settings](liteopt-py/README.md#common-result-diagnostics)
+for iteration, evaluation-count, and history definitions.
+
+
+GN/LM now support `options={"linear_solver": "direct"}` or
+`options={"linear_solver": "cg"}`. The direct route keeps the existing dense
+backends including QR. CG accepts either a dense Jacobian or a pair of
+`jacobian_vec(x, v)` / `jacobian_transpose_vec(x, w)` callbacks; the pair
+uses O(m+n) workspace without constructing J. A lone `jacobian_vec` is no
+longer converted to a dense matrix. See the
+[Python linear solver guide](liteopt-py/README.md#direct-and-iterative-linear-solvers)
+for selection rules, tolerances, and diagnostics.
+
+Rust keeps the dense `solve_with_fn*` methods. Set
+`solver.linear_solver = LinearSolver::Cg` and pass
+`JacobianProducts::new(forward, transpose)` to
+`solve_with_derivatives*` for matrix-free solves. These types and
+`CgOptions` are exported from `liteopt::solvers`.
