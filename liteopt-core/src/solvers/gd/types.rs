@@ -10,7 +10,7 @@ pub struct GradientDescent<S: Space = EuclideanSpace> {
     pub step_size: f64,
     /// Maximum number of iterations.
     pub max_iters: usize,
-    /// Considered converged when the gradient norm falls below this threshold.
+    /// Considered converged when the gradient norm is at or below this threshold.
     pub tol_grad: f64,
     /// If true, prints per-iteration diagnostics (f, |grad|, step size).
     pub verbose: bool,
@@ -54,4 +54,34 @@ pub struct OptimizeResult<P> {
     pub grad_norm: f64,
     pub converged: bool,
     pub trace: Option<Vec<SolverTraceRecord>>,
+    pub status: GdTermination,
+    /// Number of objective evaluations, including line-search trials.
+    pub nfev: usize,
+    pub n_attempts: usize,
+    pub n_ls_trials: usize,
+    /// Number of gradient evaluations, including the final point.
+    pub njev: usize,
+}
+
+/// Reason gradient descent stopped. Only `Converged` is success.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GdTermination {
+    Converged,
+    MaxIterations,
+    LineSearchFailed,
+    NonFinite,
+    InvalidStep,
+    InvalidOptions,
+}
+impl GdTermination {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Converged => "converged",
+            Self::MaxIterations => "max_iters",
+            Self::LineSearchFailed => "line_search_failed",
+            Self::NonFinite => "non_finite",
+            Self::InvalidStep => "invalid_step",
+            Self::InvalidOptions => "invalid_options",
+        }
+    }
 }

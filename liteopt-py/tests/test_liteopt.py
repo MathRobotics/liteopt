@@ -248,10 +248,8 @@ def test_gauss_newton_mode_simple_converges():
         x0=[0.0, 0.0],
         jacobian=jacobian_2d,
         options={
-            "damping_update": "fixed",
             "linear_system": "normal_jtj",
             "line_search_method": "strict_decrease",
-            "lambda": 1e-8,
             "max_iters": 100,
             "tol_r": 1e-10,
             "tol_dx": 1e-10,
@@ -269,7 +267,7 @@ def test_gauss_newton_mode_simple_converges():
     assert r_norm < 1e-6
 
 
-def test_gauss_newton_mode_simple_reports_non_converged_when_no_improving_step_exists():
+def test_gauss_newton_mode_simple_recognizes_stationary_constant_residual():
     def residual_const(_x):
         return [1.0]
 
@@ -281,16 +279,14 @@ def test_gauss_newton_mode_simple_reports_non_converged_when_no_improving_step_e
         x0=[0.0],
         jacobian=jacobian_zero,
         options={
-            "damping_update": "fixed",
             "linear_system": "normal_jtj",
             "line_search_method": "strict_decrease",
-            "lambda": 1e-6,
             "tol_dx": 0.0,
             "line_search": True,
         },
     )
 
-    assert not ok
+    assert ok
     assert cost > 0.0
     assert r_norm > 0.0
     assert step_norm == 0.0

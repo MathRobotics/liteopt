@@ -37,8 +37,19 @@ impl LineSearchPolicy for StrictDecreaseBacktracking {
         ctx: &LineSearchContext,
         eval_cost: &mut dyn FnMut(f64) -> Option<f64>,
     ) -> LineSearchResult {
+        if !ctx.cost0.is_finite()
+            || !crate::solvers::common::step_policy::valid_backtracking(self.beta, self.min_step)
+        {
+            return LineSearchResult {
+                accepted: false,
+                alpha: ctx.alpha0,
+            };
+        }
         let mut alpha = ctx.alpha0;
         for _ in 0..self.max_steps {
+            if !alpha.is_finite() || alpha <= 0.0 || alpha < self.min_step {
+                break;
+            }
             let Some(cost_trial) = eval_cost(alpha) else {
                 alpha *= self.beta;
                 if alpha < self.min_step {
@@ -46,7 +57,7 @@ impl LineSearchPolicy for StrictDecreaseBacktracking {
                 }
                 continue;
             };
-            if cost_trial < ctx.cost0 {
+            if cost_trial.is_finite() && cost_trial < ctx.cost0 {
                 return LineSearchResult {
                     accepted: true,
                     alpha,

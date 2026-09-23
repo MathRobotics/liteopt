@@ -3,6 +3,11 @@ use std::fmt::Write;
 
 #[derive(Clone, Debug)]
 pub struct SolverTraceRecord {
+    pub linear_iters: Option<usize>,
+    pub linear_residual_norm: Option<f64>,
+    pub phase: &'static str,
+    pub accepted: Option<bool>,
+    pub ls_trials: Option<usize>,
     pub solver: &'static str,
     pub iter: usize,
     pub f: Option<f64>,
@@ -13,6 +18,10 @@ pub struct SolverTraceRecord {
     pub step_size: Option<f64>,
     pub alpha: Option<f64>,
     pub lambda: Option<f64>,
+    pub lambda_next: Option<f64>,
+    pub predicted_reduction: Option<f64>,
+    pub actual_reduction: Option<f64>,
+    pub gain_ratio: Option<f64>,
     pub dphi0: Option<f64>,
     pub note: Option<&'static str>,
 }
@@ -20,6 +29,12 @@ pub struct SolverTraceRecord {
 impl SolverTraceRecord {
     fn format_line(&self) -> String {
         let mut line = format!("[{}] iter {:>6}", self.solver, self.iter);
+        if let Some(v) = self.linear_iters {
+            let _ = write!(line, " | linear_iters {v}");
+        }
+        if let Some(v) = self.linear_residual_norm {
+            let _ = write!(line, " | linear_residual {v:.6e}");
+        }
         if let Some(v) = self.f {
             let _ = write!(line, " | f {:>13.6e}", v);
         }
@@ -56,6 +71,11 @@ impl SolverTraceRecord {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct TraceRow {
+    linear_iters: Option<usize>,
+    linear_residual_norm: Option<f64>,
+    phase: &'static str,
+    accepted: Option<bool>,
+    ls_trials: Option<usize>,
     iter: usize,
     f: Option<f64>,
     cost: Option<f64>,
@@ -65,6 +85,10 @@ pub(crate) struct TraceRow {
     step_size: Option<f64>,
     alpha: Option<f64>,
     lambda: Option<f64>,
+    lambda_next: Option<f64>,
+    predicted_reduction: Option<f64>,
+    actual_reduction: Option<f64>,
+    gain_ratio: Option<f64>,
     dphi0: Option<f64>,
     note: Option<&'static str>,
 }
@@ -72,6 +96,11 @@ pub(crate) struct TraceRow {
 impl TraceRow {
     pub(crate) fn iter(iter: usize) -> Self {
         Self {
+            linear_iters: None,
+            linear_residual_norm: None,
+            phase: "iteration",
+            accepted: None,
+            ls_trials: None,
             iter,
             f: None,
             cost: None,
@@ -81,9 +110,22 @@ impl TraceRow {
             step_size: None,
             alpha: None,
             lambda: None,
+            lambda_next: None,
+            predicted_reduction: None,
+            actual_reduction: None,
+            gain_ratio: None,
             dphi0: None,
             note: None,
         }
+    }
+
+    pub(crate) fn linear(mut self, report: crate::numerics::cg::CgReport) -> Self {
+        self.linear_iters = Some(report.iters);
+        self.linear_residual_norm = report
+            .residual_norm
+            .is_finite()
+            .then_some(report.residual_norm);
+        self
     }
 
     pub(crate) fn f(mut self, f: f64) -> Self {
@@ -126,13 +168,47 @@ impl TraceRow {
         self
     }
 
+    pub(crate) fn lambda_next(mut self, value: f64) -> Self {
+        self.lambda_next = Some(value);
+        self
+    }
+    pub(crate) fn reductions(mut self, predicted: f64, actual: f64, ratio: f64) -> Self {
+        self.predicted_reduction = predicted.is_finite().then_some(predicted);
+        self.actual_reduction = actual.is_finite().then_some(actual);
+        self.gain_ratio = ratio.is_finite().then_some(ratio);
+        self
+    }
     pub(crate) fn dphi0(mut self, dphi0: f64) -> Self {
         self.dphi0 = Some(dphi0);
         self
     }
 
+    pub(crate) fn phase(mut self, phase: &'static str) -> Self {
+        self.phase = phase;
+        if phase == "final" {
+            self.accepted = None;
+            self.ls_trials = None;
+        }
+        self
+    }
+    pub(crate) fn ls_trials(mut self, count: usize) -> Self {
+        self.ls_trials = Some(count);
+        self
+    }
     pub(crate) fn note(mut self, note: &'static str) -> Self {
         self.note = Some(note);
+        match note {
+            "initial" => self.phase = "initial",
+            "accepted"
+            | "rejected"
+            | "accepted_step_invalid"
+            | "gain_ratio_rejected"
+            | "invalid_prediction" => {
+                self.phase = "search";
+                self.accepted = Some(note == "accepted");
+            }
+            _ => {}
+        }
         self
     }
 }
@@ -195,6 +271,11 @@ impl SolverTracer {
 
     pub(crate) fn emit(&self, row: TraceRow) {
         let record = SolverTraceRecord {
+            linear_iters: row.linear_iters,
+            linear_residual_norm: row.linear_residual_norm,
+            phase: row.phase,
+            accepted: row.accepted,
+            ls_trials: row.ls_trials,
             solver: self.solver,
             iter: row.iter,
             f: row.f,
@@ -205,6 +286,10 @@ impl SolverTracer {
             step_size: row.step_size,
             alpha: row.alpha,
             lambda: row.lambda,
+            lambda_next: row.lambda_next,
+            predicted_reduction: row.predicted_reduction,
+            actual_reduction: row.actual_reduction,
+            gain_ratio: row.gain_ratio,
             dphi0: row.dphi0,
             note: row.note,
         };

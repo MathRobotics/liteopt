@@ -44,7 +44,9 @@ impl LineSearchPolicy for NoLineSearch {
         ctx: &LineSearchContext,
         eval_cost: &mut dyn FnMut(f64) -> Option<f64>,
     ) -> LineSearchResult {
-        let accepted = eval_cost(ctx.alpha0).is_some();
+        let accepted = ctx.alpha0.is_finite()
+            && ctx.alpha0 > 0.0
+            && eval_cost(ctx.alpha0).is_some_and(f64::is_finite);
         LineSearchResult {
             accepted,
             alpha: ctx.alpha0,
@@ -62,9 +64,12 @@ impl LineSearchPolicy for CostDecrease {
         ctx: &LineSearchContext,
         eval_cost: &mut dyn FnMut(f64) -> Option<f64>,
     ) -> LineSearchResult {
-        let accepted = eval_cost(ctx.alpha0)
-            .map(|cost_trial| cost_trial.is_finite() && cost_trial < ctx.cost0)
-            .unwrap_or(false);
+        let accepted = ctx.alpha0.is_finite()
+            && ctx.alpha0 > 0.0
+            && ctx.cost0.is_finite()
+            && eval_cost(ctx.alpha0)
+                .map(|cost_trial| cost_trial.is_finite() && cost_trial < ctx.cost0)
+                .unwrap_or(false);
         LineSearchResult {
             accepted,
             alpha: ctx.alpha0,
@@ -75,6 +80,7 @@ impl LineSearchPolicy for CostDecrease {
 /// Armijo backtracking policy.
 #[derive(Clone, Copy, Debug)]
 pub struct ArmijoBacktracking {
+    pub min_step: f64,
     pub beta: f64,
     pub max_steps: usize,
     pub c_armijo: f64,
@@ -83,6 +89,7 @@ pub struct ArmijoBacktracking {
 impl ArmijoBacktracking {
     pub fn new(beta: f64, max_steps: usize, c_armijo: f64) -> Self {
         Self {
+            min_step: 1e-8,
             beta,
             max_steps,
             c_armijo,
@@ -90,9 +97,17 @@ impl ArmijoBacktracking {
     }
 }
 
+impl ArmijoBacktracking {
+    pub fn with_min_step(mut self, min_step: f64) -> Self {
+        self.min_step = min_step;
+        self
+    }
+}
+
 impl Default for ArmijoBacktracking {
     fn default() -> Self {
         Self {
+            min_step: 1e-8,
             beta: 0.5,
             max_steps: 20,
             c_armijo: 1e-4,
@@ -117,15 +132,32 @@ impl LineSearchPolicy for ArmijoBacktracking {
             };
         };
 
+        if !ctx.cost0.is_finite()
+            || !dphi0.is_finite()
+            || dphi0 >= 0.0
+            || !valid_backtracking(self.beta, self.min_step)
+            || !self.c_armijo.is_finite()
+            || self.c_armijo <= 0.0
+            || self.c_armijo >= 1.0
+        {
+            return LineSearchResult {
+                accepted: false,
+                alpha: ctx.alpha0,
+            };
+        }
+
         let mut alpha = ctx.alpha0;
         for _ in 0..self.max_steps {
+            if !alpha.is_finite() || alpha <= 0.0 || alpha < self.min_step {
+                break;
+            }
             let Some(cost_trial) = eval_cost(alpha) else {
                 alpha *= self.beta;
                 continue;
             };
 
             let rhs = ctx.cost0 + self.c_armijo * alpha * dphi0;
-            if rhs.is_finite() && cost_trial <= rhs {
+            if cost_trial.is_finite() && rhs.is_finite() && cost_trial <= rhs {
                 return LineSearchResult {
                     accepted: true,
                     alpha,
@@ -139,4 +171,9 @@ impl LineSearchPolicy for ArmijoBacktracking {
             alpha,
         }
     }
+}
+
+// Shared by the public backtracking policies, including direct Rust callers.
+pub(crate) fn valid_backtracking(beta: f64, min_step: f64) -> bool {
+    beta.is_finite() && beta > 0.0 && beta < 1.0 && min_step.is_finite() && min_step > 0.0
 }

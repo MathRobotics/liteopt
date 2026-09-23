@@ -100,13 +100,9 @@ impl PyObjectiveCallbacks {
 
         let out = self.value_fn.bind(py).call1((x.to_vec(),));
         match out.and_then(|v| v.extract::<f64>()) {
-            Ok(v) if v.is_finite() => v,
-            Ok(_) => {
-                self.err.set_once(PyValueError::new_err(
-                    "objective function must return finite float",
-                ));
-                f64::INFINITY
-            }
+            // Non-finite trial costs are rejected by GD's line search, which
+            // may recover with a smaller step. Python exceptions still propagate.
+            Ok(v) => v,
             Err(e) => {
                 self.err.set_once(e);
                 f64::INFINITY
@@ -126,7 +122,15 @@ impl PyObjectiveCallbacks {
         })();
 
         match result {
-            Ok(g) if g.len() == grad_out.len() => grad_out.copy_from_slice(&g),
+            Ok(g) if g.len() == grad_out.len() => {
+                if g.iter().all(|v| v.is_finite()) {
+                    grad_out.copy_from_slice(&g);
+                } else {
+                    self.err
+                        .set_once(PyValueError::new_err("gradient must contain finite values"));
+                    grad_out.fill(f64::NAN);
+                }
+            }
             Ok(g) => {
                 self.err.set_once(PyValueError::new_err(format!(
                     "gradient length mismatch: expected {}, got {}",

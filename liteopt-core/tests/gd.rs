@@ -258,3 +258,46 @@ fn gradient_descent_behavior_can_collect_trace_history() {
     assert_eq!(trace[0].solver, "gd");
     assert!(trace.iter().any(|row| row.note == Some("converged")));
 }
+
+#[test]
+fn final_point_is_checked_with_and_without_search() {
+    let solver = gd_solver(0.5, 1, 0.0);
+    for result in [
+        solver.minimize_with_fn(vec![0.0], quadratic_value, quadratic_gradient),
+        solver.minimize_with_fn_and_line_search(
+            vec![0.0],
+            quadratic_value,
+            quadratic_gradient,
+            &mut CostDecrease,
+        ),
+    ] {
+        assert_eq!(result.x, vec![3.0]);
+        assert!(result.converged);
+        assert_eq!(result.grad_norm, 0.0);
+        assert_eq!(result.iters, 1);
+        assert_eq!((result.nfev, result.njev), (2, 2));
+    }
+    let result =
+        gd_solver(0.1, 0, 0.0).minimize_with_fn(vec![0.0], quadratic_value, quadratic_gradient);
+    assert_eq!(result.grad_norm, 6.0);
+    assert_eq!(result.status.as_str(), "max_iters");
+}
+
+#[test]
+fn invalid_values_stop_and_history_is_independent_of_logging() {
+    let mut solver = gd_solver(0.1, 2, 0.0);
+    solver.collect_trace = true;
+    let result = solver.minimize_with_fn(vec![0.0], quadratic_value, quadratic_gradient);
+    let history = result.trace.unwrap();
+    assert_eq!(history.len(), 4);
+    assert_eq!(history[1].alpha, Some(0.1));
+    assert_eq!(history[3].note, Some("max_iters"));
+    assert!((result.grad_norm - 2.0 * (result.x[0] - 3.0).abs()).abs() < 1e-12);
+    let bad = solver.minimize_with_fn(vec![0.0], quadratic_value, |_, g| g[0] = f64::NAN);
+    assert_eq!(bad.status.as_str(), "non_finite");
+    assert_eq!(bad.njev, 1);
+    solver.step_size = -1.0;
+    let bad = solver.minimize_with_fn(vec![0.0], quadratic_value, quadratic_gradient);
+    assert_eq!(bad.status.as_str(), "invalid_options");
+    assert_eq!(bad.nfev, 0);
+}
