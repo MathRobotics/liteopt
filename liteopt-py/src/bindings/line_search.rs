@@ -43,7 +43,8 @@ impl PyLineSearchPolicy {
         if let Ok(d) = out.cast::<PyDict>() {
             let accepted = d
                 .get_item("accepted")?
-                .and_then(|v| v.extract::<bool>().ok())
+                .map(|v| v.extract::<bool>())
+                .transpose()?
                 .unwrap_or(true);
             let Some(alpha_obj) = d.get_item("alpha")? else {
                 return Err(PyValueError::new_err(

@@ -13,7 +13,7 @@ use crate::bindings::callbacks::PyErrState;
 /// - `add(x, v) -> Vec[float]`
 /// - `difference(x, y) -> Vec[float]`
 ///
-/// If omitted, each operation falls back to Euclidean behavior.
+/// Without retract, compose scale and add; omitted primitive operations are Euclidean.
 pub(crate) struct PyVecManifold {
     retract: Option<Py<PyAny>>,
     tangent_norm: Option<Py<PyAny>>,
@@ -230,7 +230,7 @@ impl Space for PyVecManifold {
         x: &Self::Point,
         direction: &Self::Tangent,
         alpha: f64,
-        _tmp: &mut Self::Tangent,
+        tmp: &mut Self::Tangent,
     ) {
         if !self.error.has_error() {
             if let Some(f) = &self.retract {
@@ -252,9 +252,7 @@ impl Space for PyVecManifold {
             }
         }
 
-        out.resize(x.len(), 0.0);
-        for i in 0..x.len() {
-            out[i] = x[i] + alpha * direction[i];
-        }
+        self.scale_into(tmp, direction, alpha);
+        self.add_into(out, x, tmp);
     }
 }
