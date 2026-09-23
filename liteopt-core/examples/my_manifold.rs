@@ -66,7 +66,6 @@ impl Space for MyManifold {
 
 fn main() {
     let mut solver = GaussNewton::with_space(MyManifold);
-    solver.lambda = 1e-3;
     solver.max_iters = 20;
     solver.tol_r = 1e-12;
     solver.tol_dq = 1e-12;

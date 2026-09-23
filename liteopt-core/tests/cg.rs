@@ -1,4 +1,7 @@
 use liteopt::numerics::cg::{CgOptions, CgWorkspace};
+use liteopt::solvers::gn::GaussNewton;
+use liteopt::solvers::lm::LevenbergMarquardt;
+use liteopt::solvers::{JacobianProducts, LinearSolver};
 
 #[test]
 fn cg_matches_diagonal_solution_and_reports_true_residual() {
@@ -51,7 +54,59 @@ fn cg_exhaustion_breakdown_and_nonfinite_are_not_success() {
     );
 }
 
+#[test]
+fn both_solvers_accept_products_without_dense_storage() {
+    let products = || {
+        JacobianProducts::new(
+            |_x: &[f64], v: &[f64], out: &mut [f64]| {
+                out[0] = v[0];
+                out[1] = 2. * v[1];
+            },
+            |_x: &[f64], w: &[f64], out: &mut [f64]| {
+                out[0] = w[0];
+                out[1] = 2. * w[1];
+            },
+        )
+    };
+    let residual = |x: &[f64], r: &mut [f64]| {
+        r[0] = x[0] - 1.;
+        r[1] = 2. * x[1] + 4.;
+    };
+    let gn = GaussNewton {
+        linear_solver: LinearSolver::Cg,
+        ..Default::default()
+    };
+    let out =
+        gn.solve_with_derivatives_default_line_search(2, vec![0.; 2], residual, products(), |_| {});
+    assert!(out.converged);
+    assert_eq!(out.njev, 0);
+    assert!(out.n_linear_iters > 0);
+    let lm = LevenbergMarquardt {
+        linear_solver: LinearSolver::Cg,
+        ..Default::default()
+    };
+    let out =
+        lm.solve_with_derivatives_default_line_search(2, vec![0.; 2], residual, products(), |_| {});
+    assert!(out.converged);
+    assert_eq!(out.njev, 0);
+    assert!((out.x[0] - 1.).abs() < 1e-6 && (out.x[1] + 2.).abs() < 1e-6);
+}
 
+#[test]
+fn product_input_with_direct_backend_is_rejected() {
+    let gn = GaussNewton::default();
+    let out = gn.solve_with_derivatives_default_line_search(
+        1,
+        vec![0.],
+        |_, r| r[0] = 1.,
+        JacobianProducts::new(
+            |_: &[f64], _: &[f64], _: &mut [f64]| panic!("must not run"),
+            |_: &[f64], _: &[f64], _: &mut [f64]| panic!("must not run"),
+        ),
+        |_| {},
+    );
+    assert_eq!(out.status, "invalid_options");
+}
 
 #[test]
 fn convergence_uses_true_residual_not_only_the_recurrence() {

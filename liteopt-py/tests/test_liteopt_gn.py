@@ -46,7 +46,7 @@ def jacobian_vec(q, v):
 
 def test_gauss_newton_planar_two_link_converges_and_reaches_target():
     x_star, cost, _, rnorm, _, ok = liteopt.gn(
-        residual, x0=[0.0, 0.0], jacobian=jacobian
+        residual, x0=[0.2, -0.3], jacobian=jacobian
     )
 
     x_star = np.asarray(x_star, dtype=float)
@@ -62,8 +62,9 @@ def test_gauss_newton_planar_two_link_converges_and_reaches_target():
 def test_gauss_newton_accepts_jacobian_vec_without_dense_jacobian():
     x_star, cost, _, rnorm, _, ok = liteopt.gn(
         residual,
-        x0=[0.0, 0.0],
+        x0=[0.2, -0.3],
         jacobian_vec=jacobian_vec,
+        jacobian_transpose_vec=lambda x, w: jacobian(x).T @ w,
     )
 
     x_star = np.asarray(x_star, dtype=float)
@@ -79,13 +80,13 @@ def test_gauss_newton_accepts_jacobian_vec_without_dense_jacobian():
 def test_gauss_newton_respects_maximum_iterations():
     _, cost_short, iters_short, rnorm_short, _, ok_short = liteopt.gn(
         residual,
-        x0=[0.0, 0.0],
+        x0=[0.2, -0.3],
         jacobian=jacobian,
         options={"max_iters": 1},
     )
     _, cost_full, iters_full, rnorm_full, _, ok_full = liteopt.gn(
         residual,
-        x0=[0.0, 0.0],
+        x0=[0.2, -0.3],
         jacobian=jacobian,
         options={"max_iters": 100},
     )
@@ -105,11 +106,11 @@ def test_gauss_newton_raises_for_invalid_jacobian_size():
     with pytest.raises(ValueError, match="jacobian size mismatch"):
         liteopt.gn(
             residual,
-            x0=[0.0, 0.0],
+            x0=[0.2, -0.3],
             jacobian=bad_jacobian,
         )
 
 
 def test_gauss_newton_requires_jacobian_or_jacobian_vec():
     with pytest.raises(ValueError, match="jacobian or jacobian_vec must be provided"):
-        liteopt.gn(residual, x0=[0.0, 0.0])
+        liteopt.gn(residual, x0=[0.2, -0.3])

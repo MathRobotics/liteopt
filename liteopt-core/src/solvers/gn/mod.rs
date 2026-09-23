@@ -8,6 +8,5 @@ pub use line_search::{
     NoLineSearch, StrictDecreaseBacktracking,
 };
 pub use types::{
-    GaussNewton, GaussNewtonDampingUpdate, GaussNewtonLineSearchMethod, GaussNewtonLinearSystem,
-    GaussNewtonResult,
+    GaussNewton, GaussNewtonLineSearchMethod, GaussNewtonLinearSystem, GaussNewtonResult,
 };

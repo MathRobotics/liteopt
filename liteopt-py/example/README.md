@@ -25,6 +25,9 @@ uv run python example/run.py manifold
 The examples cover:
 
 - `gd`: gradient descent on a one-dimensional quadratic
-- `gn`: Gauss-Newton on a small least-squares problem
-- `lm`: Levenberg-Marquardt on a two-link inverse-kinematics problem
-- `manifold`: Gauss-Newton with angle wrapping via `manifold.retract`
+- `gn`: `least_squares(method="gn")` on a small least-squares problem
+- `lm`: `least_squares(method="lm")` with Armijo backtracking on a two-link inverse-kinematics problem
+- `manifold`: `least_squares(method="gn")` with angle wrapping via `manifold.retract`
+
+The GN manifold example starts away from a singular straight-arm configuration.
+GN now uses an undamped direction; LM can use damping at singular initial poses.

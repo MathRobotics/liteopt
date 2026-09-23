@@ -71,12 +71,14 @@ fn levenberg_marquardt_solver(max_iters: usize) -> LevenbergMarquardt<EuclideanS
         lambda: 1e-3,
         lambda_up: 10.0,
         lambda_down: 0.5,
-        step_scale: 1.0,
+        step_size: 1.0,
         max_iters,
         tol_r: 1e-9,
+        tol_grad: 1e-12,
         tol_dq: 1e-12,
         verbose: false,
         collect_trace: false,
+        ..Default::default()
     }
 }
 
@@ -135,14 +137,14 @@ fn levenberg_marquardt_behavior_longer_run_reduces_cost_more_than_short_run() {
 }
 
 #[test]
-fn levenberg_marquardt_behavior_stops_after_repeated_linear_solve_failure() {
+fn levenberg_marquardt_behavior_stops_on_nonfinite_jacobian() {
     let solver = levenberg_marquardt_solver(3);
 
     let residual_fn = |_x: &[f64], r: &mut [f64]| {
         r[0] = 1.0;
     };
 
-    // Force A to contain NaN, which makes solve_linear_inplace fail.
+    // Invalid Jacobians must stop before a linear solve or damping retry.
     let jacobian_fn = |_x: &[f64], j: &mut [f64]| {
         j[0] = f64::NAN;
     };
@@ -157,7 +159,8 @@ fn levenberg_marquardt_behavior_stops_after_repeated_linear_solve_failure() {
         "solver should stop as non-converged: {:?}",
         res
     );
-    assert_eq!(res.iters, 3, "solver should stop exactly at max_iters");
+    assert_eq!(res.iters, 0);
+    assert_eq!(res.status, "non_finite_jacobian");
 }
 
 #[test]

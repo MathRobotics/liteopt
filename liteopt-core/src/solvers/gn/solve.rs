@@ -1,18 +1,20 @@
 use crate::manifolds::space::Space;
+use crate::numerics::linalg::dot;
 use crate::problems::least_squares::LeastSquaresProblem;
 use crate::solvers::common::least_squares::{
-    commit_trial_state, complete_direction_diagnostics, residual_cost, residual_norm,
-    solve_left_jjt_direction, solve_normal_jtj_direction,
+    commit_trial_state, residual_cost, residual_norm, solve_left_jjt_direction,
+    solve_normal_jtj_direction,
 };
 use crate::solvers::common::trace::{SolverTracer, TraceRow};
+use crate::solvers::{Jacobian, LinearSolver};
 
 use super::line_search::{
     ArmijoBacktracking, LineSearchContext, LineSearchPolicy, NoLineSearch,
     StrictDecreaseBacktracking,
 };
 use super::types::{
-    DirectionResult, GaussNewton, GaussNewtonDampingUpdate, GaussNewtonLineSearchMethod,
-    GaussNewtonLinearSystem, GaussNewtonResult,
+    DirectionResult, GaussNewton, GaussNewtonLineSearchMethod, GaussNewtonLinearSystem,
+    GaussNewtonResult,
 };
 use super::workspace::GaussNewtonWorkspace;
 
@@ -38,41 +40,54 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         result
     }
 
-    fn compute_direction<JF>(
+    fn compute_direction<JF: Jacobian>(
         &self,
         x: &[f64],
+        jacobian: &mut JF,
         m: usize,
         n: usize,
-        lambda: f64,
-        jacobian_fn: &mut JF,
         need_dphi0: bool,
         ws: &mut GaussNewtonWorkspace,
-    ) -> Option<DirectionResult>
-    where
-        JF: FnMut(&[f64], &mut [f64]),
-    {
-        jacobian_fn(x, &mut ws.j);
-
-        let solved = match self.linear_system {
-            GaussNewtonLinearSystem::LeftJjT => solve_left_jjt_direction(
-                &ws.j, &ws.r, m, n, lambda, &mut ws.a, &mut ws.y, &mut ws.dx,
-            ),
-            GaussNewtonLinearSystem::NormalJtJ => {
-                solve_normal_jtj_direction(&ws.j, &ws.r, m, n, lambda, &mut ws.an, &mut ws.dx)
+    ) -> Option<DirectionResult> {
+        let solved = if let Some(cg) = &mut ws.cg {
+            let report = cg.solve(&ws.g, &mut ws.dx, self.cg, |v, out| {
+                jacobian.mul(x, &ws.j, v, &mut ws.jv);
+                if ws.jv.iter().any(|v| !v.is_finite()) {
+                    out.fill(f64::NAN);
+                    return;
+                }
+                jacobian.transpose_mul(x, &ws.j, &ws.jv, out);
+            });
+            ws.linear_report = Some(report);
+            report.converged()
+        } else {
+            match self.linear_system {
+                GaussNewtonLinearSystem::Qr => ws
+                    .qr
+                    .as_mut()
+                    .unwrap()
+                    .solve(&ws.j, &ws.r, m, n, 0., &mut ws.dx)
+                    .is_ok(),
+                GaussNewtonLinearSystem::LeftJjT => solve_left_jjt_direction(
+                    &ws.j, &ws.r, m, n, 0.0, &mut ws.a, &mut ws.y, &mut ws.dx,
+                ),
+                GaussNewtonLinearSystem::NormalJtJ => {
+                    solve_normal_jtj_direction(&ws.j, &ws.r, m, n, 0.0, &mut ws.an, &mut ws.dx)
+                }
             }
         };
         if !solved {
             return None;
         }
 
-        let diagnostics =
-            complete_direction_diagnostics(&ws.j, &ws.r, m, n, &mut ws.dx, &mut ws.g, need_dphi0);
+        let dphi0 = if need_dphi0 {
+            Some(dot(&ws.g, &ws.dx))
+        } else {
+            None
+        };
         let dx_norm = self.space.tangent_norm(&ws.dx);
-
-        Some(DirectionResult {
-            dx_norm,
-            dphi0: diagnostics.dphi0,
-        })
+        (dx_norm.is_finite() && dx_norm >= 0.0 && ws.dx.iter().all(|v| v.is_finite()))
+            .then_some(DirectionResult { dx_norm, dphi0 })
     }
 
     fn evaluate_trial<R, P>(
@@ -87,9 +102,18 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         R: FnMut(&[f64], &mut [f64]),
         P: FnMut(&mut [f64]),
     {
+        if !alpha.is_finite() || alpha <= 0.0 {
+            return None;
+        }
         self.space
             .retract_into(&mut ws.x_trial, x, &ws.dx, alpha, &mut ws.tmp);
+        if !ws.x_trial.iter().all(|v| v.is_finite()) {
+            return None;
+        }
         project(&mut ws.x_trial);
+        if !ws.x_trial.iter().all(|v| v.is_finite()) {
+            return None;
+        }
 
         residual_fn(&ws.x_trial, &mut ws.r_trial);
         let cost_trial = residual_cost(&ws.r_trial);
@@ -127,7 +151,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         } else {
             1e-4
         };
-        ArmijoBacktracking::new(beta, max_steps, c_armijo)
+        ArmijoBacktracking::new(beta, max_steps, c_armijo).with_min_step(self.ls_min_step)
     }
 
     fn configured_strict_decrease(&self) -> StrictDecreaseBacktracking {
@@ -156,7 +180,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
     ) -> GaussNewtonResult<Vec<f64>>
     where
         R: FnMut(&[f64], &mut [f64]),
-        JF: FnMut(&[f64], &mut [f64]),
+        JF: Jacobian,
         P: FnMut(&mut [f64]),
     {
         match self.line_search_method {
@@ -211,235 +235,234 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
     ) -> GaussNewtonResult<Vec<f64>>
     where
         R: FnMut(&[f64], &mut [f64]),
-        JF: FnMut(&[f64], &mut [f64]),
+        JF: Jacobian,
         P: FnMut(&mut [f64]),
         LS: LineSearchPolicy,
     {
+        let nfev = std::cell::Cell::new(0usize);
+        let njev = std::cell::Cell::new(0usize);
+        let mut residual_fn = |x: &[f64], out: &mut [f64]| {
+            nfev.set(nfev.get() + 1);
+            residual_fn(x, out);
+        };
+        let mut n_linear_iters = 0;
+        let mut linear_status = None;
+        let mut linear_residual_norm = None;
+        let matrix_free = jacobian_fn.is_matrix_free();
+        let mut n_attempts = 0;
+        let mut n_accepted = 0;
+        let n_retries = 0;
+        let mut n_ls_trials = 0;
         let n = x.len();
-        assert!(m > 0 && n > 0);
-
-        let mut lambda = self.lambda;
-        let mut ws = GaussNewtonWorkspace::new(m, n);
-
-        residual_fn(&x, &mut ws.r);
-        let mut cost = residual_cost(&ws.r);
-        let mut r_norm = residual_norm(&ws.r);
-
-        trace.emit(TraceRow::iter(0).cost(cost).r_norm(r_norm).note("initial"));
-
-        for it in 0..self.max_iters {
-            if r_norm <= self.tol_r {
-                trace.emit(
-                    TraceRow::iter(it)
-                        .cost(cost)
-                        .r_norm(r_norm)
-                        .note("converged_r"),
-                );
+        let mut it = 0;
+        let mut cost = f64::NAN;
+        let mut r_norm = f64::NAN;
+        let mut last_dx_norm = 0.0;
+        let mut grad_norm = f64::NAN;
+        // All exits record the state being returned. No small-step exit is success.
+        macro_rules! finish {
+            ($status:expr, $ok:expr) => {{
+                let row = TraceRow::iter(it)
+                    .cost(cost)
+                    .r_norm(r_norm)
+                    .dx_norm(last_dx_norm)
+                    .note($status)
+                    .phase("final");
+                trace.emit(if grad_norm.is_finite() {
+                    row.grad_norm(grad_norm)
+                } else {
+                    row
+                });
                 return GaussNewtonResult {
                     x,
                     cost,
                     iters: it,
                     r_norm,
-                    dx_norm: 0.0,
-                    converged: true,
+                    dx_norm: last_dx_norm,
+                    converged: $ok,
+                    status: $status,
+                    grad_norm: grad_norm.is_finite().then_some(grad_norm),
+                    n_linear_iters,
+                    linear_status,
+                    linear_residual_norm,
+                    nfev: nfev.get(),
+                    njev: njev.get(),
+                    n_attempts,
+                    n_accepted,
+                    n_retries,
+                    n_ls_trials,
                     trace: None,
                 };
-            }
+            }};
+        }
+        if (matrix_free && self.linear_solver != LinearSolver::Cg) || !self.cg.is_valid() {
+            finish!("invalid_options", false);
+        }
+        if !(self.step_size.is_finite()
+            && self.tol_r.is_finite()
+            && self.tol_r >= 0.0
+            && self.tol_dq.is_finite()
+            && self.tol_dq >= 0.0
+            && self.tol_grad.is_finite()
+            && self.tol_grad >= 0.0
+            && self.ls_beta.is_finite()
+            && self.ls_beta > 0.0
+            && self.ls_beta < 1.0
+            && self.c_armijo.is_finite()
+            && self.c_armijo > 0.0
+            && self.c_armijo < 1.0
+            && self.ls_min_step.is_finite()
+            && self.ls_min_step > 0.0
+            && self.ls_max_steps > 0)
+        {
+            finish!("invalid_options", false);
+        }
+        if m == 0 || n == 0 {
+            finish!("invalid_dimensions", false);
+        }
+        if !x.iter().all(|v| v.is_finite()) {
+            finish!("non_finite_initial", false);
+        }
+        let mut ws =
+            GaussNewtonWorkspace::new(m, n, self.linear_system, self.linear_solver, matrix_free);
 
+        residual_fn(&x, &mut ws.r);
+        cost = residual_cost(&ws.r);
+        r_norm = residual_norm(&ws.r);
+        trace.emit(TraceRow::iter(0).cost(cost).r_norm(r_norm).note("initial"));
+        loop {
+            grad_norm = f64::NAN;
+            if !cost.is_finite() || !r_norm.is_finite() {
+                finish!("non_finite_residual", false);
+            }
+            if !matrix_free {
+                njev.set(njev.get() + 1);
+            }
+            jacobian_fn.prepare(&x, &mut ws.j);
+            if !ws.j.iter().all(|v| v.is_finite()) {
+                finish!("non_finite_jacobian", false);
+            }
+            jacobian_fn.transpose_mul(&x, &ws.j, &ws.r, &mut ws.g);
+            grad_norm = self.space.tangent_norm(&ws.g);
+            if !ws.g.iter().all(|v| v.is_finite()) || !grad_norm.is_finite() || grad_norm < 0.0 {
+                finish!("non_finite_gradient", false);
+            }
+            if r_norm <= self.tol_r {
+                finish!("converged_r", true);
+            }
+            if grad_norm <= self.tol_grad {
+                finish!("converged_grad", true);
+            }
+            if it == self.max_iters {
+                finish!("max_iters", false);
+            }
+            n_attempts += 1;
             let direction = self.compute_direction(
                 &x,
+                &mut jacobian_fn,
                 m,
                 n,
-                lambda,
-                &mut jacobian_fn,
                 line_search.requires_directional_derivative(),
                 &mut ws,
             );
-
-            let Some(direction) = direction else {
-                if self.damping_update == GaussNewtonDampingUpdate::Adaptive {
-                    lambda *= 10.0;
-                    trace.emit(
-                        TraceRow::iter(it)
-                            .cost(cost)
-                            .r_norm(r_norm)
-                            .lambda(lambda)
-                            .note("linear_solve_failed"),
-                    );
-                    continue;
+            if let Some(report) = ws.linear_report {
+                n_linear_iters += report.iters;
+                linear_status = Some(report.status);
+                linear_residual_norm = report
+                    .residual_norm
+                    .is_finite()
+                    .then_some(report.residual_norm);
+                trace.emit(
+                    TraceRow::iter(it)
+                        .linear(report)
+                        .note(report.status)
+                        .phase("linear"),
+                );
+                if report.status == "linear_non_finite" {
+                    finish!("linear_non_finite", false);
                 }
-                trace.emit(
-                    TraceRow::iter(it)
-                        .cost(cost)
-                        .r_norm(r_norm)
-                        .note("linear_solve_failed_fixed"),
-                );
-                return GaussNewtonResult {
-                    x,
-                    cost,
-                    iters: it,
-                    r_norm,
-                    dx_norm: 0.0,
-                    converged: false,
-                    trace: None,
-                };
+            }
+            let Some(direction) = direction else {
+                let status = ws
+                    .linear_report
+                    .filter(|r| !r.converged())
+                    .map(|r| r.status)
+                    .or_else(|| {
+                        ws.qr
+                            .as_ref()
+                            .and_then(|qr| qr.last_error)
+                            .map(|e| e.as_str())
+                    })
+                    .unwrap_or("linear_solve_failed");
+                finish!(status, false);
             };
-
             let dx_norm = direction.dx_norm;
-            let skip_pre_step_dx_stop = self.line_search_method
-                == GaussNewtonLineSearchMethod::StrictDecrease
-                && !line_search.requires_directional_derivative();
-            if dx_norm <= self.tol_dq && !skip_pre_step_dx_stop {
-                trace.emit(
-                    TraceRow::iter(it)
-                        .cost(cost)
-                        .r_norm(r_norm)
-                        .dx_norm(dx_norm)
-                        .note("converged_dx"),
-                );
-                return GaussNewtonResult {
-                    x,
-                    cost,
-                    iters: it,
-                    r_norm,
-                    dx_norm,
-                    converged: true,
-                    trace: None,
-                };
+            let dphi0 = direction.dphi0;
+            last_dx_norm = dx_norm;
+            if dx_norm <= self.tol_dq {
+                finish!("stalled", false);
             }
-
-            let alpha0 = self.step_scale.clamp(0.0, 1.0);
+            let alpha0 = self.step_size.clamp(0.0, 1.0);
             if alpha0 == 0.0 {
-                trace.emit(
-                    TraceRow::iter(it)
-                        .cost(cost)
-                        .r_norm(r_norm)
-                        .dx_norm(dx_norm)
-                        .note("zero_step_scale"),
-                );
-                return GaussNewtonResult {
-                    x,
-                    cost,
-                    iters: it,
-                    r_norm,
-                    dx_norm,
-                    converged: false,
-                    trace: None,
-                };
+                finish!("zero_step_size", false);
             }
-
-            let ls_ctx = LineSearchContext {
+            let ctx = LineSearchContext {
                 iter: it,
                 alpha0,
                 cost0: cost,
-                dphi0: direction.dphi0,
+                dphi0,
                 dx_norm,
-                lambda,
+                lambda: 0.0,
             };
-            let mut eval_cost = |alpha_trial| {
-                self.evaluate_trial(&x, alpha_trial, &mut residual_fn, &mut project, &mut ws)
-            };
-            let ls = line_search.search(&ls_ctx, &mut eval_cost);
-
+            let mut ls_trials = 0;
+            let ls = line_search.search(&ctx, &mut |alpha| {
+                ls_trials += 1;
+                self.evaluate_trial(&x, alpha, &mut residual_fn, &mut project, &mut ws)
+            });
+            n_ls_trials += ls_trials;
             if !ls.accepted {
-                if self.damping_update == GaussNewtonDampingUpdate::Adaptive {
-                    lambda *= 10.0;
-                    trace.emit(
-                        TraceRow::iter(it)
-                            .cost(cost)
-                            .r_norm(r_norm)
-                            .dx_norm(dx_norm)
-                            .alpha(ls.alpha)
-                            .lambda(lambda)
-                            .note("rejected"),
-                    );
-                    continue;
-                }
                 trace.emit(
                     TraceRow::iter(it)
                         .cost(cost)
-                        .r_norm(r_norm)
-                        .dx_norm(dx_norm)
+                        .grad_norm(grad_norm)
+                        .step_size(alpha0)
+                        .ls_trials(ls_trials)
                         .alpha(ls.alpha)
-                        .note("rejected_fixed"),
+                        .note("rejected"),
                 );
-                return GaussNewtonResult {
-                    x,
-                    cost,
-                    iters: it,
-                    r_norm,
-                    dx_norm: 0.0,
-                    converged: false,
-                    trace: None,
-                };
+                finish!("rejected", false);
             }
-
-            let cost_trial =
-                self.evaluate_trial(&x, ls.alpha, &mut residual_fn, &mut project, &mut ws);
-            let Some(cost_trial) = cost_trial else {
-                if self.damping_update == GaussNewtonDampingUpdate::Adaptive {
-                    lambda *= 10.0;
-                    trace.emit(
-                        TraceRow::iter(it)
-                            .cost(cost)
-                            .r_norm(r_norm)
-                            .dx_norm(dx_norm)
-                            .alpha(ls.alpha)
-                            .lambda(lambda)
-                            .note("accepted_step_invalid"),
-                    );
-                    continue;
-                }
+            let Some(trial) =
+                self.evaluate_trial(&x, ls.alpha, &mut residual_fn, &mut project, &mut ws)
+            else {
                 trace.emit(
                     TraceRow::iter(it)
                         .cost(cost)
-                        .r_norm(r_norm)
-                        .dx_norm(dx_norm)
+                        .grad_norm(grad_norm)
+                        .step_size(alpha0)
+                        .ls_trials(ls_trials)
                         .alpha(ls.alpha)
-                        .note("accepted_step_invalid_fixed"),
+                        .note("accepted_step_invalid"),
                 );
-                return GaussNewtonResult {
-                    x,
-                    cost,
-                    iters: it,
-                    r_norm,
-                    dx_norm: 0.0,
-                    converged: false,
-                    trace: None,
-                };
+                finish!("accepted_step_invalid", false);
             };
-
-            self.commit_trial_step(&mut x, &mut cost, &mut r_norm, cost_trial, &mut ws);
-
-            if self.damping_update == GaussNewtonDampingUpdate::Adaptive {
-                lambda = (0.5 * lambda).max(self.lambda);
-            }
+            let cost_before = cost;
+            let r_before = r_norm;
+            n_accepted += 1;
+            self.commit_trial_step(&mut x, &mut cost, &mut r_norm, trial, &mut ws);
             trace.emit(
                 TraceRow::iter(it)
-                    .cost(cost)
-                    .r_norm(r_norm)
+                    .cost(cost_before)
+                    .r_norm(r_before)
                     .dx_norm(dx_norm)
+                    .grad_norm(grad_norm)
+                    .step_size(alpha0)
+                    .ls_trials(ls_trials)
                     .alpha(ls.alpha)
-                    .lambda(lambda)
                     .note("accepted"),
             );
-        }
 
-        trace.emit(
-            TraceRow::iter(self.max_iters)
-                .cost(cost)
-                .r_norm(r_norm)
-                .note("max_iters"),
-        );
-
-        GaussNewtonResult {
-            x,
-            cost,
-            iters: self.max_iters,
-            r_norm,
-            dx_norm: f64::NAN,
-            converged: false,
-            trace: None,
+            it += 1;
         }
     }
 
@@ -460,7 +483,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
             m,
             x,
             |x, r| problem.residual(x, r),
-            |x, j| problem.jacobian(x, j),
+            |x: &[f64], j: &mut [f64]| problem.jacobian(x, j),
             |x| problem.project(x),
             line_search,
             &trace,
@@ -488,7 +511,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
     ) -> GaussNewtonResult<Vec<f64>>
     where
         R: FnMut(&[f64], &mut [f64]),
-        JF: FnMut(&[f64], &mut [f64]),
+        JF: Jacobian,
         P: FnMut(&mut [f64]),
         LS: LineSearchPolicy,
     {
@@ -523,6 +546,27 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
         self.attach_trace(result, trace)
     }
 
+    /// Variant accepting dense callbacks or matrix-free JacobianProducts.
+    pub fn solve_with_derivatives<R, JF, P, LS>(
+        &self,
+        m: usize,
+        x: Vec<f64>,
+        residual_fn: R,
+        jacobian_fn: JF,
+        project: P,
+        line_search: &mut LS,
+    ) -> GaussNewtonResult<Vec<f64>>
+    where
+        R: FnMut(&[f64], &mut [f64]),
+        JF: Jacobian,
+        P: FnMut(&mut [f64]),
+        LS: LineSearchPolicy,
+    {
+        let trace = self.make_tracer();
+        let result = self.run_with_fn(m, x, residual_fn, jacobian_fn, project, line_search, &trace);
+        self.attach_trace(result, trace)
+    }
+
     /// Solve using the configured line-search method on the solver.
     pub fn solve_with_default_line_search<P>(
         &self,
@@ -538,7 +582,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
             m,
             x,
             |x, r| problem.residual(x, r),
-            |x, j| problem.jacobian(x, j),
+            |x: &[f64], j: &mut [f64]| problem.jacobian(x, j),
             |x| problem.project(x),
             &trace,
         );
@@ -557,6 +601,26 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> GaussNewton<S> {
     where
         R: FnMut(&[f64], &mut [f64]),
         JF: FnMut(&[f64], &mut [f64]),
+        P: FnMut(&mut [f64]),
+    {
+        let trace = self.make_tracer();
+        let result =
+            self.run_with_configured_line_search(m, x, residual_fn, jacobian_fn, project, &trace);
+        self.attach_trace(result, trace)
+    }
+
+    /// Variant accepting dense callbacks or matrix-free JacobianProducts.
+    pub fn solve_with_derivatives_default_line_search<R, JF, P>(
+        &self,
+        m: usize,
+        x: Vec<f64>,
+        residual_fn: R,
+        jacobian_fn: JF,
+        project: P,
+    ) -> GaussNewtonResult<Vec<f64>>
+    where
+        R: FnMut(&[f64], &mut [f64]),
+        JF: Jacobian,
         P: FnMut(&mut [f64]),
     {
         let trace = self.make_tracer();

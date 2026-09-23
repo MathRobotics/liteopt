@@ -37,12 +37,7 @@ impl LineSearchPolicy for MyLineSearch {
             };
         };
 
-        // If damping is already large, start more conservatively.
-        let mut alpha = if ctx.lambda > 1.0 {
-            0.5 * ctx.alpha0
-        } else {
-            ctx.alpha0
-        };
+        let mut alpha = ctx.alpha0;
         for _ in 0..self.max_steps {
             let Some(cost_trial) = eval_cost(alpha) else {
                 alpha *= self.beta;

@@ -2,9 +2,8 @@ use liteopt::{
     manifolds::{space::Space, EuclideanSpace},
     problems::least_squares::LeastSquaresProblem,
     solvers::gn::{
-        GaussNewton, GaussNewtonDampingUpdate, GaussNewtonLineSearchMethod,
-        GaussNewtonLinearSystem, LineSearchContext, LineSearchPolicy, LineSearchResult,
-        NoLineSearch,
+        GaussNewton, GaussNewtonLineSearchMethod, GaussNewtonLinearSystem, LineSearchContext,
+        LineSearchPolicy, LineSearchResult, NoLineSearch,
     },
 };
 
@@ -133,8 +132,8 @@ where
     S: Space<Point = Vec<f64>, Tangent = Vec<f64>>,
 {
     let mut solver = GaussNewton::with_space(space);
-    solver.lambda = 1e-3;
     solver.max_iters = max_iters;
+    solver.tol_grad = 1e-12;
     solver.tol_r = 1e-9;
     solver.tol_dq = 1e-12;
     solver
@@ -175,7 +174,7 @@ fn target_error_norm(problem: &Planar2LinkProblem, q: &[f64]) -> f64 {
 fn gauss_newton_behavior_converges_on_planar_two_link_problem() {
     let problem = planar_two_link_problem();
     let solver = gauss_newton_solver(EuclideanSpace, 200);
-    let res = solver.solve_with_default_line_search(vec![0.0, 0.0], &problem);
+    let res = solver.solve_with_default_line_search(vec![0.2, -0.3], &problem);
 
     assert!(res.converged, "did not converge: {:?}", res);
     assert!(res.r_norm < 1e-6, "residual too large: {}", res.r_norm);
@@ -185,7 +184,7 @@ fn gauss_newton_behavior_converges_on_planar_two_link_problem() {
 fn gauss_newton_behavior_improves_forward_kinematics_error() {
     let problem = planar_two_link_problem();
     let solver = gauss_newton_solver(EuclideanSpace, 200);
-    let q0 = vec![0.0, 0.0];
+    let q0 = vec![0.2, -0.3];
     let initial_err = target_error_norm(&problem, &q0);
 
     let res = solver.solve_with_default_line_search(q0, &problem);
@@ -205,7 +204,10 @@ fn gauss_newton_behavior_improves_forward_kinematics_error() {
 fn gauss_newton_behavior_custom_manifold_converges_on_planar_two_link_problem() {
     let problem = planar_two_link_problem();
     let solver = gauss_newton_solver(MyManifold, 200);
-    let q0 = vec![3.0 * std::f64::consts::PI, -2.0 * std::f64::consts::PI];
+    let q0 = vec![
+        3.0 * std::f64::consts::PI,
+        -2.0 * std::f64::consts::PI + 0.3,
+    ];
     let res = solver.solve_with_default_line_search(q0, &problem);
     let final_err = target_error_norm(&problem, &res.x);
 
@@ -221,7 +223,10 @@ fn gauss_newton_behavior_custom_manifold_converges_on_planar_two_link_problem() 
 fn gauss_newton_behavior_custom_manifold_wraps_solution_angles_into_primary_range() {
     let problem = planar_two_link_problem();
     let solver = gauss_newton_solver(MyManifold, 200);
-    let q0 = vec![3.0 * std::f64::consts::PI, -2.0 * std::f64::consts::PI];
+    let q0 = vec![
+        3.0 * std::f64::consts::PI,
+        -2.0 * std::f64::consts::PI + 0.3,
+    ];
     let res = solver.solve_with_default_line_search(q0, &problem);
 
     for qi in &res.x {
@@ -237,7 +242,7 @@ fn gauss_newton_behavior_custom_manifold_wraps_solution_angles_into_primary_rang
 fn gauss_newton_behavior_stops_after_maximum_iterations() {
     let problem = planar_two_link_problem();
     let short = gauss_newton_solver(EuclideanSpace, 1)
-        .solve_with_default_line_search(vec![0.0, 0.0], &problem);
+        .solve_with_default_line_search(vec![0.2, -0.3], &problem);
 
     assert!(
         !short.converged,
@@ -251,9 +256,9 @@ fn gauss_newton_behavior_stops_after_maximum_iterations() {
 fn gauss_newton_behavior_longer_run_reduces_cost_more_than_short_run() {
     let problem = planar_two_link_problem();
     let short = gauss_newton_solver(EuclideanSpace, 1)
-        .solve_with_default_line_search(vec![0.0, 0.0], &problem);
+        .solve_with_default_line_search(vec![0.2, -0.3], &problem);
     let full = gauss_newton_solver(EuclideanSpace, 200)
-        .solve_with_default_line_search(vec![0.0, 0.0], &problem);
+        .solve_with_default_line_search(vec![0.2, -0.3], &problem);
 
     assert!(full.converged, "full run should converge: {:?}", full);
     assert!(full.iters <= 200);
@@ -266,14 +271,14 @@ fn gauss_newton_behavior_longer_run_reduces_cost_more_than_short_run() {
 }
 
 #[test]
-fn gauss_newton_behavior_stops_after_repeated_linear_solve_failure() {
+fn gauss_newton_behavior_stops_on_nonfinite_jacobian() {
     let solver = gauss_newton_solver(EuclideanSpace, 3);
 
     let residual_fn = |_x: &[f64], r: &mut [f64]| {
         r[0] = 1.0;
     };
 
-    // Force A to contain NaN, which makes solve_linear_inplace fail.
+    // Invalid Jacobians must stop before a linear solve.
     let jacobian_fn = |_x: &[f64], j: &mut [f64]| {
         j[0] = f64::NAN;
     };
@@ -288,7 +293,7 @@ fn gauss_newton_behavior_stops_after_repeated_linear_solve_failure() {
         "solver should stop as non-converged: {:?}",
         res
     );
-    assert_eq!(res.iters, 3, "solver should stop exactly at max_iters");
+    assert_eq!(res.iters, 0, "undamped GN cannot retry a failed solve");
 }
 
 #[test]
@@ -300,7 +305,7 @@ fn gauss_newton_behavior_supports_custom_line_search_policy() {
 
     let res = solver.solve_with_fn(
         m,
-        vec![0.0, 0.0],
+        vec![0.2, -0.3],
         |x, r| problem.residual_eval(x, r),
         |x, j| problem.jacobian_eval(x, j),
         |_x| {},
@@ -315,7 +320,7 @@ fn gauss_newton_behavior_supports_custom_line_search_policy() {
 fn gauss_newton_behavior_supports_explicit_no_line_search_policy() {
     let problem = planar_two_link_problem();
     let solver = gauss_newton_solver(EuclideanSpace, 200);
-    let x0 = vec![0.0, 0.0];
+    let x0 = vec![0.2, -0.3];
     let m = 2;
 
     let mut r0 = vec![0.0; m];
@@ -358,16 +363,14 @@ fn gauss_newton_simple_behavior_converges_on_planar_two_link_problem() {
     let problem = planar_two_link_problem();
     let mut solver = gauss_newton_solver(EuclideanSpace, 200);
     solver.linear_system = GaussNewtonLinearSystem::NormalJtJ;
-    solver.damping_update = GaussNewtonDampingUpdate::Fixed;
     solver.line_search_method = GaussNewtonLineSearchMethod::StrictDecrease;
-    solver.lambda = 1e-8;
     solver.max_iters = 200;
     solver.tol_r = 1e-10;
     solver.tol_dq = 1e-10;
     solver.ls_beta = 0.5;
     solver.ls_min_step = 1e-8;
     solver.ls_max_steps = 12;
-    let res = solver.solve_with_default_line_search(vec![0.0, 0.0], &problem);
+    let res = solver.solve_with_default_line_search(vec![0.2, -0.3], &problem);
 
     assert!(res.converged, "did not converge: {:?}", res);
     assert!(res.r_norm < 1e-6, "residual too large: {}", res.r_norm);
@@ -378,25 +381,21 @@ fn gauss_newton_simple_behavior_supports_disabling_line_search() {
     let problem = planar_two_link_problem();
     let mut solver = gauss_newton_solver(EuclideanSpace, 200);
     solver.linear_system = GaussNewtonLinearSystem::NormalJtJ;
-    solver.damping_update = GaussNewtonDampingUpdate::Fixed;
     solver.line_search_method = GaussNewtonLineSearchMethod::None;
-    solver.lambda = 1e-8;
     solver.max_iters = 200;
     solver.tol_r = 1e-10;
     solver.tol_dq = 1e-10;
-    let res = solver.solve_with_default_line_search(vec![0.0, 0.0], &problem);
+    let res = solver.solve_with_default_line_search(vec![0.2, -0.3], &problem);
 
     assert!(res.converged, "did not converge: {:?}", res);
     assert!(res.cost < 1e-8, "cost too large: {}", res.cost);
 }
 
 #[test]
-fn gauss_newton_simple_behavior_reports_stalled_for_non_improving_step() {
+fn gauss_newton_simple_behavior_recognizes_stationary_constant_residual() {
     let mut solver = gauss_newton_solver(EuclideanSpace, 20);
     solver.linear_system = GaussNewtonLinearSystem::NormalJtJ;
-    solver.damping_update = GaussNewtonDampingUpdate::Fixed;
     solver.line_search_method = GaussNewtonLineSearchMethod::StrictDecrease;
-    solver.lambda = 1e-6;
     solver.tol_dq = 0.0;
     solver.ls_beta = 0.5;
     solver.ls_min_step = 1e-8;
@@ -414,11 +413,7 @@ fn gauss_newton_simple_behavior_reports_stalled_for_non_improving_step() {
         |_x| {},
     );
 
-    assert!(
-        !res.converged,
-        "stalled case should be non-converged: {:?}",
-        res
-    );
+    assert!(res.converged, "constant residual is stationary: {:?}", res);
     assert_eq!(res.dx_norm, 0.0);
 }
 
@@ -429,7 +424,7 @@ fn gauss_newton_behavior_can_collect_trace_history() {
     solver.collect_trace = true;
     let res = solver.solve_with_fn_default_line_search(
         2,
-        vec![0.0, 0.0],
+        vec![0.2, -0.3],
         |x, r| problem.residual_eval(x, r),
         |x, j| problem.jacobian_eval(x, j),
         |_x| {},

@@ -211,10 +211,10 @@ impl Space for PyVecManifold {
                     v.extract::<f64>()
                 });
                 match out {
-                    Ok(norm) if norm.is_finite() => return norm,
+                    Ok(norm) if norm.is_finite() && norm >= 0.0 => return norm,
                     Ok(_) => {
                         self.error.set_once(PyValueError::new_err(
-                            "manifold.tangent_norm returned non-finite value",
+                            "manifold.tangent_norm must be finite and nonnegative",
                         ));
                     }
                     Err(e) => self.error.set_once(e),

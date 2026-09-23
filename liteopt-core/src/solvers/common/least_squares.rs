@@ -2,11 +2,6 @@ use crate::numerics::linalg::{
     dot, jj_t_plus_lambda, jt_j_plus_lambda, jt_mul_vec, norm2, solve_linear_inplace,
 };
 
-pub(crate) struct DirectionDiagnostics {
-    pub(crate) dphi0: Option<f64>,
-    pub(crate) used_steepest_descent: bool,
-}
-
 pub(crate) fn residual_cost(r: &[f64]) -> f64 {
     0.5 * dot(r, r)
 }
@@ -51,40 +46,6 @@ pub(crate) fn solve_normal_jtj_direction(
     jt_mul_vec(j, m, n, r, dx);
     negate_in_place(dx);
     solve_linear_inplace(a, dx, n)
-}
-
-pub(crate) fn complete_direction_diagnostics(
-    j: &[f64],
-    r: &[f64],
-    m: usize,
-    n: usize,
-    dx: &mut [f64],
-    g: &mut [f64],
-    need_dphi0: bool,
-) -> DirectionDiagnostics {
-    if !need_dphi0 {
-        return DirectionDiagnostics {
-            dphi0: None,
-            used_steepest_descent: false,
-        };
-    }
-
-    jt_mul_vec(j, m, n, r, g);
-    let mut dphi0 = dot(g, dx);
-    let mut used_steepest_descent = false;
-
-    if !dphi0.is_finite() || dphi0 >= 0.0 {
-        for i in 0..n {
-            dx[i] = -g[i];
-        }
-        dphi0 = dot(g, dx);
-        used_steepest_descent = true;
-    }
-
-    DirectionDiagnostics {
-        dphi0: Some(dphi0),
-        used_steepest_descent,
-    }
 }
 
 pub(crate) fn commit_trial_state(

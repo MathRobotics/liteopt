@@ -52,8 +52,9 @@ def run_gn() -> None:
         # row-major: [J00, J01, J10, J11]
         return [1.0, 0.0, 0.0, 1.0]
 
-    x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(
+    x_star, cost, iters, r_norm, dx_norm, ok = liteopt.least_squares(
         residual,
+        method="gn",
         x0=[0.0, 0.0],
         jacobian=jacobian,
         options={"max_iters": 100, "tol_r": 1e-12, "tol_dx": 1e-12},
@@ -96,11 +97,12 @@ def run_lm() -> None:
             l2 * c12,
         ]
 
-    x_star, cost, iters, r_norm, dx_norm, ok = liteopt.lm(
+    x_star, cost, iters, r_norm, dx_norm, ok = liteopt.least_squares(
         residual,
+        method="lm",
         x0=[0.0, 0.0],
         jacobian=jacobian,
-        options={"max_iters": 200, "tol_r": 1e-12, "tol_dx": 1e-12},
+        options={"max_iters": 200, "tol_r": 1e-12, "tol_dx": 1e-12, "line_search_method": "armijo"},
     )
     p_star = forward_kinematics(x_star)
     err = math.hypot(p_star[0] - target[0], p_star[1] - target[1])
@@ -155,9 +157,10 @@ def run_manifold() -> None:
             l2 * c12,
         ]
 
-    x_star, cost, iters, r_norm, dx_norm, ok = liteopt.gn(
+    x_star, cost, iters, r_norm, dx_norm, ok = liteopt.least_squares(
         residual,
-        x0=[3.0 * math.pi, -2.0 * math.pi],
+        method="gn",
+        x0=[3.0 * math.pi, -2.0 * math.pi + 0.3],
         jacobian=jacobian,
         options={
             "manifold": WrappedAngles(),

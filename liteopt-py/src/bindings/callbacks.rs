@@ -44,11 +44,7 @@ fn extract_vec1(py: Python<'_>, out: &Bound<'_, PyAny>) -> PyResult<Vec<f64>> {
     out.extract::<Vec<f64>>()
 }
 
-fn extract_jacobian_row_major(
-    py: Python<'_>,
-    out: &Bound<'_, PyAny>,
-    expected_len: usize,
-) -> PyResult<Vec<f64>> {
+fn extract_jacobian_row_major(out: &Bound<'_, PyAny>, expected_len: usize) -> PyResult<Vec<f64>> {
     if let Ok(arr) = out.cast::<PyArray2<f64>>() {
         let shape = arr.shape();
         if shape.len() != 2 {
@@ -60,15 +56,9 @@ fn extract_jacobian_row_major(
             return Err(PyValueError::new_err("jacobian size mismatch"));
         }
 
-        let owned;
-        let arr_c = if arr.is_contiguous() {
-            arr
-        } else {
-            owned = arr.to_owned_array().into_pyarray(py);
-            &owned
-        };
-        let slice = unsafe { arr_c.as_slice()? };
-        return Ok(slice.to_vec());
+        // ndarray iteration follows logical row-major order, independently of
+        // NumPy's C/Fortran layout or the strides of a sliced view.
+        return Ok(arr.readonly().as_array().iter().copied().collect());
     }
 
     let vec = out.extract::<Vec<f64>>()?;
@@ -151,8 +141,13 @@ pub(crate) struct PyLeastSquaresCallbacks {
     residual_fn: Py<PyAny>,
     jacobian_fn: Option<Py<PyAny>>,
     jacobian_vec_fn: Option<Py<PyAny>>,
+    jacobian_transpose_vec_fn: Option<Py<PyAny>>,
     project_fn: Option<Py<PyAny>>,
     err: PyErrState,
+    pub(crate) nfev: std::cell::Cell<usize>,
+    pub(crate) n_jac_calls: std::cell::Cell<usize>,
+    pub(crate) n_jtvp: std::cell::Cell<usize>,
+    pub(crate) n_jvp: std::cell::Cell<usize>,
 }
 
 impl PyLeastSquaresCallbacks {
@@ -160,6 +155,7 @@ impl PyLeastSquaresCallbacks {
         residual_fn: Py<PyAny>,
         jacobian_fn: Option<Py<PyAny>>,
         jacobian_vec_fn: Option<Py<PyAny>>,
+        jacobian_transpose_vec_fn: Option<Py<PyAny>>,
         project_fn: Option<Py<PyAny>>,
         err: PyErrState,
     ) -> Self {
@@ -167,12 +163,18 @@ impl PyLeastSquaresCallbacks {
             residual_fn,
             jacobian_fn,
             jacobian_vec_fn,
+            jacobian_transpose_vec_fn,
             project_fn,
             err,
+            nfev: std::cell::Cell::new(0),
+            n_jac_calls: std::cell::Cell::new(0),
+            n_jtvp: std::cell::Cell::new(0),
+            n_jvp: std::cell::Cell::new(0),
         }
     }
 
     pub(crate) fn infer_residual_dim(&self, py: Python<'_>, x0: &[f64]) -> PyResult<usize> {
+        self.nfev.set(self.nfev.get() + 1);
         let out = self.residual_fn.bind(py).call1((x0.to_vec(),))?;
         let r0 = extract_vec1(py, &out)?;
         if r0.is_empty() {
@@ -185,11 +187,12 @@ impl PyLeastSquaresCallbacks {
 
     pub(crate) fn residual_into(&self, py: Python<'_>, x: &[f64], r_out: &mut [f64]) {
         if self.err.has_error() {
-            r_out.fill(0.0);
+            r_out.fill(f64::NAN);
             return;
         }
 
         let result: PyResult<Vec<f64>> = (|| {
+            self.nfev.set(self.nfev.get() + 1);
             let out = self.residual_fn.bind(py).call1((x.to_vec(),))?;
             extract_vec1(py, &out)
         })();
@@ -202,79 +205,94 @@ impl PyLeastSquaresCallbacks {
                     r_out.len(),
                     r.len()
                 )));
-                r_out.fill(0.0);
+                r_out.fill(f64::NAN);
             }
             Err(e) => {
                 self.err.set_once(e);
-                r_out.fill(0.0);
+                r_out.fill(f64::NAN);
             }
         }
     }
 
     pub(crate) fn jacobian_into(&self, py: Python<'_>, x: &[f64], j_out: &mut [f64]) {
         if self.err.has_error() {
-            j_out.fill(0.0);
+            j_out.fill(f64::NAN);
             return;
         }
 
         if let Some(jacobian_fn) = &self.jacobian_fn {
             let result: PyResult<Vec<f64>> = (|| {
+                self.n_jac_calls.set(self.n_jac_calls.get() + 1);
                 let out = jacobian_fn.bind(py).call1((x.to_vec(),))?;
-                extract_jacobian_row_major(py, &out, j_out.len())
+                let j = extract_jacobian_row_major(&out, j_out.len())?;
+                if j.iter().any(|v| !v.is_finite()) {
+                    return Err(PyValueError::new_err("jacobian must contain finite values"));
+                }
+                Ok(j)
             })();
 
             match result {
                 Ok(j) => j_out.copy_from_slice(&j),
                 Err(e) => {
                     self.err.set_once(e);
-                    j_out.fill(0.0);
+                    j_out.fill(f64::NAN);
                 }
             }
             return;
         }
 
-        let Some(jacobian_vec_fn) = &self.jacobian_vec_fn else {
-            self.err.set_once(PyValueError::new_err(
-                "jacobian or jacobian_vec must be provided",
-            ));
-            j_out.fill(0.0);
+        self.err
+            .set_once(PyValueError::new_err("direct solver requires jacobian"));
+        j_out.fill(f64::NAN);
+    }
+
+    pub(crate) fn product_into(
+        &self,
+        py: Python<'_>,
+        x: &[f64],
+        v: &[f64],
+        out: &mut [f64],
+        transpose: bool,
+    ) {
+        if self.err.has_error() {
+            out.fill(f64::NAN);
             return;
+        }
+        let (callback, count, name) = if transpose {
+            (
+                &self.jacobian_transpose_vec_fn,
+                &self.n_jtvp,
+                "jacobian_transpose_vec",
+            )
+        } else {
+            (&self.jacobian_vec_fn, &self.n_jvp, "jacobian_vec")
         };
-
         let result: PyResult<Vec<f64>> = (|| {
-            let n = x.len();
-            if n == 0 || j_out.len() % n != 0 {
-                return Err(PyValueError::new_err("jacobian size mismatch"));
+            let callback = callback
+                .as_ref()
+                .ok_or_else(|| PyValueError::new_err(format!("{name} must be provided")))?;
+            count.set(count.get() + 1);
+            let value = callback.bind(py).call1((x.to_vec(), v.to_vec()))?;
+            let values = extract_vec1(py, &value)?;
+            if values.len() != out.len() {
+                return Err(PyValueError::new_err(format!(
+                    "{name} length mismatch: expected {}, got {}",
+                    out.len(),
+                    values.len()
+                )));
             }
-            let m = j_out.len() / n;
-            let mut dense = vec![0.0; j_out.len()];
-            let mut v = vec![0.0; n];
-
-            for col in 0..n {
-                v[col] = 1.0;
-                let out = jacobian_vec_fn.bind(py).call1((x.to_vec(), v.clone()))?;
-                let jv = extract_vec1(py, &out)?;
-                if jv.len() != m {
-                    return Err(PyValueError::new_err(format!(
-                        "jacobian_vec length mismatch: expected {}, got {}",
-                        m,
-                        jv.len()
-                    )));
-                }
-                for row in 0..m {
-                    dense[row * n + col] = jv[row];
-                }
-                v[col] = 0.0;
+            if values.iter().any(|v| !v.is_finite()) {
+                return Err(PyValueError::new_err(format!(
+                    "{name} must contain finite values"
+                )));
             }
-
-            Ok(dense)
+            Ok(values)
         })();
-
         match result {
-            Ok(j) => j_out.copy_from_slice(&j),
+            Ok(values) => out.copy_from_slice(&values),
             Err(e) => {
                 self.err.set_once(e);
-                j_out.fill(0.0);
+                out.fill(f64::NAN);
             }
         }
     }
@@ -303,6 +321,43 @@ impl PyLeastSquaresCallbacks {
             }
             Err(e) => {
                 self.err.set_once(e);
+            }
+        }
+    }
+}
+
+pub(crate) struct PyJacobian<'a, 'py> {
+    pub callbacks: &'a PyLeastSquaresCallbacks,
+    pub py: Python<'py>,
+    pub matrix_free: bool,
+}
+impl liteopt_core::solvers::Jacobian for PyJacobian<'_, '_> {
+    fn is_matrix_free(&self) -> bool {
+        self.matrix_free
+    }
+    fn prepare(&mut self, x: &[f64], dense: &mut [f64]) {
+        if !self.matrix_free {
+            self.callbacks.jacobian_into(self.py, x, dense);
+        }
+    }
+    fn mul(&mut self, x: &[f64], dense: &[f64], v: &[f64], out: &mut [f64]) {
+        if self.matrix_free {
+            self.callbacks.product_into(self.py, x, v, out, false);
+        } else {
+            for (row, value) in dense.chunks_exact(v.len()).zip(out) {
+                *value = row.iter().zip(v).map(|(a, b)| a * b).sum();
+            }
+        }
+    }
+    fn transpose_mul(&mut self, x: &[f64], dense: &[f64], w: &[f64], out: &mut [f64]) {
+        if self.matrix_free {
+            self.callbacks.product_into(self.py, x, w, out, true);
+        } else {
+            out.fill(0.);
+            for (row, wi) in dense.chunks_exact(out.len()).zip(w) {
+                for (value, ji) in out.iter_mut().zip(row) {
+                    *value += ji * wi;
+                }
             }
         }
     }

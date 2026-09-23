@@ -46,7 +46,7 @@ def jacobian_vec(q, v):
 
 def test_levenberg_marquardt_planar_two_link_converges_and_reaches_target():
     x_star, cost, _, rnorm, _, ok = liteopt.lm(
-        residual, x0=[0.0, 0.0], jacobian=jacobian
+        residual, x0=[0.0, 0.0], jacobian=jacobian, options={"tol_grad": 1e-10}
     )
 
     x_star = np.asarray(x_star, dtype=float)
@@ -64,6 +64,8 @@ def test_levenberg_marquardt_accepts_jacobian_vec_without_dense_jacobian():
         residual,
         x0=[0.0, 0.0],
         jacobian_vec=jacobian_vec,
+        jacobian_transpose_vec=lambda x, w: jacobian(x).T @ w,
+        options={"tol_grad": 1e-10},
     )
 
     x_star = np.asarray(x_star, dtype=float)
@@ -106,7 +108,7 @@ def test_levenberg_marquardt_can_return_history_with_debug():
         residual,
         x0=[0.0, 0.0],
         jacobian=jacobian,
-        options={"max_iters": 200},
+        options={"max_iters": 200, "tol_grad": 1e-10},
         debug={"history": True},
     )
 
@@ -176,8 +178,8 @@ def test_levenberg_marquardt_requires_jacobian_or_jacobian_vec():
         ({"lambda": float("nan")}, "options.lambda must be finite and >= 0"),
         ({"lambda_up": 1.0}, "options.lambda_up must be finite and > 1"),
         ({"lambda_down": 1.0}, "options.lambda_down must be finite and in \\(0,1\\)"),
-        ({"step_scale": 0.0}, "options.step_scale must be finite and in \\(0,1\\]"),
-        ({"step_scale": 1.5}, "options.step_scale must be finite and in \\(0,1\\]"),
+        ({"step_size": 0.0}, "options.step_size must be finite and in \\(0,1\\]"),
+        ({"step_size": 1.5}, "options.step_size must be finite and in \\(0,1\\]"),
         ({"tol_r": -1.0}, "options.tol_r must be finite and >= 0"),
         ({"tol_dx": float("inf")}, "options.tol_dx must be finite and >= 0"),
     ],
