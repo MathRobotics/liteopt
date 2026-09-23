@@ -38,7 +38,7 @@ def test_cg_step_matches_independent_linear_solution(method, shape, products):
     assert info["n_linear_iters"] == rows[0]["linear_iters"]
 
 
-@pytest.mark.parametrize("method,gain_ratio", [("gn", False), ("lm", False)])
+@pytest.mark.parametrize("method,gain_ratio", [("gn", False), ("lm", False), ("lm", True)])
 @pytest.mark.parametrize("search", ["none", "armijo", "strict_decrease"])
 def test_nonlinear_direct_and_matrix_free_paths_agree(method, search, gain_ratio):
     residual = lambda x: [x[0] ** 2 - 1.]
@@ -178,3 +178,15 @@ def test_lm_recovers_from_inner_exhaustion_by_increasing_damping():
     assert any(row["note"] == "linear_converged" for row in out[-2])
 
 
+def test_nonfinite_product_during_gain_prediction_propagates():
+    calls = 0
+    def forward(x, v):
+        nonlocal calls
+        calls += 1
+        if calls == 3:  # after CG iteration and true-residual verification
+            raise RuntimeError("prediction failed")
+        return v
+    with pytest.raises(RuntimeError, match="prediction failed"):
+        liteopt.least_squares(lambda x: [x[0]-1.], [0.],
+            jacobian_vec=forward, jacobian_transpose_vec=lambda x, w: w,
+            options={"damping_update": "gain_ratio"})

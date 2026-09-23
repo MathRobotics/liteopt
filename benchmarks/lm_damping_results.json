@@ -1,0 +1,1213 @@
+{
+  "platform": "macOS-15.7.4-arm64-arm-64bit-Mach-O",
+  "python": "3.13.1",
+  "build": "release",
+  "limits": {
+    "max_iters": 300,
+    "tol_r": 1e-08,
+    "tol_grad": 1e-08,
+    "tol_dx": 1e-14
+  },
+  "results": [
+    {
+      "problem": "rosenbrock",
+      "start": [
+        -1.2,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0
+      ],
+      "search": "cost_decrease",
+      "policy": "cost_based",
+      "cost": 1.3219751354542008e-19,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 2.2977142319737406e-10,
+      "iters": 26,
+      "nfev": 48,
+      "njev": 27,
+      "n_jac_calls": 27,
+      "n_jvp": 0,
+      "n_attempts": 26,
+      "n_accepted": 20,
+      "n_retries": 6,
+      "n_ls_trials": 26
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        -1.2,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0
+      ],
+      "search": "cost_decrease",
+      "policy": "gain_ratio",
+      "cost": 5.98856327195977e-17,
+      "success": true,
+      "status": "converged_grad",
+      "grad_norm": 4.8917518336604536e-09,
+      "iters": 24,
+      "nfev": 46,
+      "njev": 25,
+      "n_jac_calls": 25,
+      "n_jvp": 0,
+      "n_attempts": 24,
+      "n_accepted": 20,
+      "n_retries": 4,
+      "n_ls_trials": 24
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        -1.2,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0
+      ],
+      "search": "armijo",
+      "policy": "cost_based",
+      "cost": 7.148208667420714e-24,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 6.034750082132777e-11,
+      "iters": 11,
+      "nfev": 46,
+      "njev": 12,
+      "n_jac_calls": 12,
+      "n_jvp": 0,
+      "n_attempts": 11,
+      "n_accepted": 11,
+      "n_retries": 0,
+      "n_ls_trials": 33
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        -1.2,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0
+      ],
+      "search": "armijo",
+      "policy": "gain_ratio",
+      "cost": 9.755700993038711e-20,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 1.9738455278205273e-10,
+      "iters": 19,
+      "nfev": 61,
+      "njev": 20,
+      "n_jac_calls": 20,
+      "n_jvp": 0,
+      "n_attempts": 19,
+      "n_accepted": 19,
+      "n_retries": 0,
+      "n_ls_trials": 40
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        -1.2,
+        1.0
+      ],
+      "scale": [
+        0.001,
+        1000.0
+      ],
+      "search": "cost_decrease",
+      "policy": "cost_based",
+      "cost": 3.773966356159161e-17,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 5.3124172421448696e-08,
+      "iters": 26,
+      "nfev": 52,
+      "njev": 27,
+      "n_jac_calls": 27,
+      "n_jvp": 0,
+      "n_attempts": 26,
+      "n_accepted": 24,
+      "n_retries": 2,
+      "n_ls_trials": 26
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        -1.2,
+        1.0
+      ],
+      "scale": [
+        0.001,
+        1000.0
+      ],
+      "search": "cost_decrease",
+      "policy": "gain_ratio",
+      "cost": 1.6761231328059562e-19,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 3.663740544589292e-10,
+      "iters": 26,
+      "nfev": 54,
+      "njev": 27,
+      "n_jac_calls": 27,
+      "n_jvp": 0,
+      "n_attempts": 26,
+      "n_accepted": 26,
+      "n_retries": 0,
+      "n_ls_trials": 26
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        -1.2,
+        1.0
+      ],
+      "scale": [
+        0.001,
+        1000.0
+      ],
+      "search": "armijo",
+      "policy": "cost_based",
+      "cost": 1.7648730132442087e-20,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 9.547918192881623e-10,
+      "iters": 20,
+      "nfev": 55,
+      "njev": 21,
+      "n_jac_calls": 21,
+      "n_jvp": 0,
+      "n_attempts": 20,
+      "n_accepted": 20,
+      "n_retries": 0,
+      "n_ls_trials": 33
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        -1.2,
+        1.0
+      ],
+      "scale": [
+        0.001,
+        1000.0
+      ],
+      "search": "armijo",
+      "policy": "gain_ratio",
+      "cost": 1.6761231328059562e-19,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 3.663740544589292e-10,
+      "iters": 26,
+      "nfev": 54,
+      "njev": 27,
+      "n_jac_calls": 27,
+      "n_jvp": 0,
+      "n_attempts": 26,
+      "n_accepted": 26,
+      "n_retries": 0,
+      "n_ls_trials": 26
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        -3.0,
+        -4.0
+      ],
+      "scale": [
+        1.0,
+        1.0
+      ],
+      "search": "cost_decrease",
+      "policy": "cost_based",
+      "cost": 5.197213371095044e-21,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 4.556932225529836e-11,
+      "iters": 7,
+      "nfev": 15,
+      "njev": 8,
+      "n_jac_calls": 8,
+      "n_jvp": 0,
+      "n_attempts": 7,
+      "n_accepted": 6,
+      "n_retries": 1,
+      "n_ls_trials": 7
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        -3.0,
+        -4.0
+      ],
+      "scale": [
+        1.0,
+        1.0
+      ],
+      "search": "cost_decrease",
+      "policy": "gain_ratio",
+      "cost": 2.9721492827667375e-18,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 1.0895135371794094e-09,
+      "iters": 19,
+      "nfev": 37,
+      "njev": 20,
+      "n_jac_calls": 20,
+      "n_jvp": 0,
+      "n_attempts": 19,
+      "n_accepted": 16,
+      "n_retries": 3,
+      "n_ls_trials": 19
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        -3.0,
+        -4.0
+      ],
+      "scale": [
+        1.0,
+        1.0
+      ],
+      "search": "armijo",
+      "policy": "cost_based",
+      "cost": 4.537693796941653e-19,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 6.60238496700056e-10,
+      "iters": 5,
+      "nfev": 13,
+      "njev": 6,
+      "n_jac_calls": 6,
+      "n_jvp": 0,
+      "n_attempts": 5,
+      "n_accepted": 5,
+      "n_retries": 0,
+      "n_ls_trials": 6
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        -3.0,
+        -4.0
+      ],
+      "scale": [
+        1.0,
+        1.0
+      ],
+      "search": "armijo",
+      "policy": "gain_ratio",
+      "cost": 2.977141974688834e-17,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 8.040825145106628e-09,
+      "iters": 5,
+      "nfev": 13,
+      "njev": 6,
+      "n_jac_calls": 6,
+      "n_jvp": 0,
+      "n_attempts": 5,
+      "n_accepted": 5,
+      "n_retries": 0,
+      "n_ls_trials": 6
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        -3.0,
+        -4.0
+      ],
+      "scale": [
+        0.001,
+        1000.0
+      ],
+      "search": "cost_decrease",
+      "policy": "cost_based",
+      "cost": 2.262523093525143e-17,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 3.3395509244830866e-08,
+      "iters": 39,
+      "nfev": 75,
+      "njev": 40,
+      "n_jac_calls": 40,
+      "n_jvp": 0,
+      "n_attempts": 39,
+      "n_accepted": 34,
+      "n_retries": 5,
+      "n_ls_trials": 39
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        -3.0,
+        -4.0
+      ],
+      "scale": [
+        0.001,
+        1000.0
+      ],
+      "search": "cost_decrease",
+      "policy": "gain_ratio",
+      "cost": 1.5038260104437257e-19,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 3.55271790073058e-10,
+      "iters": 39,
+      "nfev": 78,
+      "njev": 40,
+      "n_jac_calls": 40,
+      "n_jvp": 0,
+      "n_attempts": 39,
+      "n_accepted": 37,
+      "n_retries": 2,
+      "n_ls_trials": 39
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        -3.0,
+        -4.0
+      ],
+      "scale": [
+        0.001,
+        1000.0
+      ],
+      "search": "armijo",
+      "policy": "cost_based",
+      "cost": 1.7169238775003148e-19,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 5.749933862386931e-06,
+      "iters": 27,
+      "nfev": 106,
+      "njev": 28,
+      "n_jac_calls": 28,
+      "n_jvp": 0,
+      "n_attempts": 27,
+      "n_accepted": 27,
+      "n_retries": 0,
+      "n_ls_trials": 77
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        -3.0,
+        -4.0
+      ],
+      "scale": [
+        0.001,
+        1000.0
+      ],
+      "search": "armijo",
+      "policy": "gain_ratio",
+      "cost": 4.012074540499452e-17,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 3.613776054392214e-08,
+      "iters": 35,
+      "nfev": 73,
+      "njev": 36,
+      "n_jac_calls": 36,
+      "n_jvp": 0,
+      "n_attempts": 35,
+      "n_accepted": 35,
+      "n_retries": 0,
+      "n_ls_trials": 36
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        2.0,
+        2.0
+      ],
+      "scale": [
+        1.0,
+        1.0
+      ],
+      "search": "cost_decrease",
+      "policy": "cost_based",
+      "cost": 5.195198115126757e-19,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 6.08452059627721e-10,
+      "iters": 4,
+      "nfev": 10,
+      "njev": 5,
+      "n_jac_calls": 5,
+      "n_jvp": 0,
+      "n_attempts": 4,
+      "n_accepted": 4,
+      "n_retries": 0,
+      "n_ls_trials": 4
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        2.0,
+        2.0
+      ],
+      "scale": [
+        1.0,
+        1.0
+      ],
+      "search": "cost_decrease",
+      "policy": "gain_ratio",
+      "cost": 5.195198115126757e-19,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 6.08452059627721e-10,
+      "iters": 4,
+      "nfev": 10,
+      "njev": 5,
+      "n_jac_calls": 5,
+      "n_jvp": 0,
+      "n_attempts": 4,
+      "n_accepted": 4,
+      "n_retries": 0,
+      "n_ls_trials": 4
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        2.0,
+        2.0
+      ],
+      "scale": [
+        1.0,
+        1.0
+      ],
+      "search": "armijo",
+      "policy": "cost_based",
+      "cost": 5.195198115126757e-19,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 6.08452059627721e-10,
+      "iters": 4,
+      "nfev": 10,
+      "njev": 5,
+      "n_jac_calls": 5,
+      "n_jvp": 0,
+      "n_attempts": 4,
+      "n_accepted": 4,
+      "n_retries": 0,
+      "n_ls_trials": 4
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        2.0,
+        2.0
+      ],
+      "scale": [
+        1.0,
+        1.0
+      ],
+      "search": "armijo",
+      "policy": "gain_ratio",
+      "cost": 5.195198115126757e-19,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 6.08452059627721e-10,
+      "iters": 4,
+      "nfev": 10,
+      "njev": 5,
+      "n_jac_calls": 5,
+      "n_jvp": 0,
+      "n_attempts": 4,
+      "n_accepted": 4,
+      "n_retries": 0,
+      "n_ls_trials": 4
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        2.0,
+        2.0
+      ],
+      "scale": [
+        0.001,
+        1000.0
+      ],
+      "search": "cost_decrease",
+      "policy": "cost_based",
+      "cost": 3.823599217365055e-20,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 1.5543147000013654e-10,
+      "iters": 18,
+      "nfev": 38,
+      "njev": 19,
+      "n_jac_calls": 19,
+      "n_jvp": 0,
+      "n_attempts": 18,
+      "n_accepted": 18,
+      "n_retries": 0,
+      "n_ls_trials": 18
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        2.0,
+        2.0
+      ],
+      "scale": [
+        0.001,
+        1000.0
+      ],
+      "search": "cost_decrease",
+      "policy": "gain_ratio",
+      "cost": 4.514292577710554e-17,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 3.8791193663225744e-08,
+      "iters": 20,
+      "nfev": 42,
+      "njev": 21,
+      "n_jac_calls": 21,
+      "n_jvp": 0,
+      "n_attempts": 20,
+      "n_accepted": 20,
+      "n_retries": 0,
+      "n_ls_trials": 20
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        2.0,
+        2.0
+      ],
+      "scale": [
+        0.001,
+        1000.0
+      ],
+      "search": "armijo",
+      "policy": "cost_based",
+      "cost": 3.823599217365055e-20,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 1.5543147000013654e-10,
+      "iters": 18,
+      "nfev": 38,
+      "njev": 19,
+      "n_jac_calls": 19,
+      "n_jvp": 0,
+      "n_attempts": 18,
+      "n_accepted": 18,
+      "n_retries": 0,
+      "n_ls_trials": 18
+    },
+    {
+      "problem": "rosenbrock",
+      "start": [
+        2.0,
+        2.0
+      ],
+      "scale": [
+        0.001,
+        1000.0
+      ],
+      "search": "armijo",
+      "policy": "gain_ratio",
+      "cost": 4.514292577710554e-17,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 3.8791193663225744e-08,
+      "iters": 20,
+      "nfev": 42,
+      "njev": 21,
+      "n_jac_calls": 21,
+      "n_jvp": 0,
+      "n_attempts": 20,
+      "n_accepted": 20,
+      "n_retries": 0,
+      "n_ls_trials": 20
+    },
+    {
+      "problem": "square_root",
+      "start": [
+        0.1
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "cost_decrease",
+      "policy": "cost_based",
+      "cost": 1.9045946572859394e-21,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 1.234372604092748e-10,
+      "iters": 10,
+      "nfev": 19,
+      "njev": 11,
+      "n_jac_calls": 11,
+      "n_jvp": 0,
+      "n_attempts": 10,
+      "n_accepted": 7,
+      "n_retries": 3,
+      "n_ls_trials": 10
+    },
+    {
+      "problem": "square_root",
+      "start": [
+        0.1
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "cost_decrease",
+      "policy": "gain_ratio",
+      "cost": 1.9045946572859394e-21,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 1.234372604092748e-10,
+      "iters": 10,
+      "nfev": 19,
+      "njev": 11,
+      "n_jac_calls": 11,
+      "n_jvp": 0,
+      "n_attempts": 10,
+      "n_accepted": 7,
+      "n_retries": 3,
+      "n_ls_trials": 10
+    },
+    {
+      "problem": "square_root",
+      "start": [
+        0.1
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "armijo",
+      "policy": "cost_based",
+      "cost": 2.386810726437758e-23,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 1.3818279853742284e-11,
+      "iters": 5,
+      "nfev": 14,
+      "njev": 6,
+      "n_jac_calls": 6,
+      "n_jvp": 0,
+      "n_attempts": 5,
+      "n_accepted": 5,
+      "n_retries": 0,
+      "n_ls_trials": 7
+    },
+    {
+      "problem": "square_root",
+      "start": [
+        0.1
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "armijo",
+      "policy": "gain_ratio",
+      "cost": 2.386810726437758e-23,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 1.3818279853742284e-11,
+      "iters": 5,
+      "nfev": 14,
+      "njev": 6,
+      "n_jac_calls": 6,
+      "n_jvp": 0,
+      "n_attempts": 5,
+      "n_accepted": 5,
+      "n_retries": 0,
+      "n_ls_trials": 7
+    },
+    {
+      "problem": "square_root",
+      "start": [
+        10.0
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "cost_decrease",
+      "policy": "cost_based",
+      "cost": 2.441676373554935e-21,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 1.3976197977205567e-10,
+      "iters": 7,
+      "nfev": 16,
+      "njev": 8,
+      "n_jac_calls": 8,
+      "n_jvp": 0,
+      "n_attempts": 7,
+      "n_accepted": 7,
+      "n_retries": 0,
+      "n_ls_trials": 7
+    },
+    {
+      "problem": "square_root",
+      "start": [
+        10.0
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "cost_decrease",
+      "policy": "gain_ratio",
+      "cost": 2.441676373554935e-21,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 1.3976197977205567e-10,
+      "iters": 7,
+      "nfev": 16,
+      "njev": 8,
+      "n_jac_calls": 8,
+      "n_jvp": 0,
+      "n_attempts": 7,
+      "n_accepted": 7,
+      "n_retries": 0,
+      "n_ls_trials": 7
+    },
+    {
+      "problem": "square_root",
+      "start": [
+        10.0
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "armijo",
+      "policy": "cost_based",
+      "cost": 2.441676373554935e-21,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 1.3976197977205567e-10,
+      "iters": 7,
+      "nfev": 16,
+      "njev": 8,
+      "n_jac_calls": 8,
+      "n_jvp": 0,
+      "n_attempts": 7,
+      "n_accepted": 7,
+      "n_retries": 0,
+      "n_ls_trials": 7
+    },
+    {
+      "problem": "square_root",
+      "start": [
+        10.0
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "armijo",
+      "policy": "gain_ratio",
+      "cost": 2.441676373554935e-21,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 1.3976197977205567e-10,
+      "iters": 7,
+      "nfev": 16,
+      "njev": 8,
+      "n_jac_calls": 8,
+      "n_jvp": 0,
+      "n_attempts": 7,
+      "n_accepted": 7,
+      "n_retries": 0,
+      "n_ls_trials": 7
+    },
+    {
+      "problem": "square_root",
+      "start": [
+        -0.1
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "cost_decrease",
+      "policy": "cost_based",
+      "cost": 1.9045946572859394e-21,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 1.234372604092748e-10,
+      "iters": 10,
+      "nfev": 19,
+      "njev": 11,
+      "n_jac_calls": 11,
+      "n_jvp": 0,
+      "n_attempts": 10,
+      "n_accepted": 7,
+      "n_retries": 3,
+      "n_ls_trials": 10
+    },
+    {
+      "problem": "square_root",
+      "start": [
+        -0.1
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "cost_decrease",
+      "policy": "gain_ratio",
+      "cost": 1.9045946572859394e-21,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 1.234372604092748e-10,
+      "iters": 10,
+      "nfev": 19,
+      "njev": 11,
+      "n_jac_calls": 11,
+      "n_jvp": 0,
+      "n_attempts": 10,
+      "n_accepted": 7,
+      "n_retries": 3,
+      "n_ls_trials": 10
+    },
+    {
+      "problem": "square_root",
+      "start": [
+        -0.1
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "armijo",
+      "policy": "cost_based",
+      "cost": 2.386810726437758e-23,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 1.3818279853742284e-11,
+      "iters": 5,
+      "nfev": 14,
+      "njev": 6,
+      "n_jac_calls": 6,
+      "n_jvp": 0,
+      "n_attempts": 5,
+      "n_accepted": 5,
+      "n_retries": 0,
+      "n_ls_trials": 7
+    },
+    {
+      "problem": "square_root",
+      "start": [
+        -0.1
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "armijo",
+      "policy": "gain_ratio",
+      "cost": 2.386810726437758e-23,
+      "success": true,
+      "status": "converged_r",
+      "grad_norm": 1.3818279853742284e-11,
+      "iters": 5,
+      "nfev": 14,
+      "njev": 6,
+      "n_jac_calls": 6,
+      "n_jvp": 0,
+      "n_attempts": 5,
+      "n_accepted": 5,
+      "n_retries": 0,
+      "n_ls_trials": 7
+    },
+    {
+      "problem": "nonzero_residual",
+      "start": [
+        0.0
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "cost_decrease",
+      "policy": "cost_based",
+      "cost": 0.038094036026253414,
+      "success": true,
+      "status": "converged_grad",
+      "grad_norm": 6.886490822033409e-10,
+      "iters": 11,
+      "nfev": 21,
+      "njev": 12,
+      "n_jac_calls": 12,
+      "n_jvp": 0,
+      "n_attempts": 11,
+      "n_accepted": 8,
+      "n_retries": 3,
+      "n_ls_trials": 11
+    },
+    {
+      "problem": "nonzero_residual",
+      "start": [
+        0.0
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "cost_decrease",
+      "policy": "gain_ratio",
+      "cost": 0.038094036026253414,
+      "success": true,
+      "status": "converged_grad",
+      "grad_norm": 7.107662236549572e-10,
+      "iters": 8,
+      "nfev": 18,
+      "njev": 9,
+      "n_jac_calls": 9,
+      "n_jvp": 0,
+      "n_attempts": 8,
+      "n_accepted": 8,
+      "n_retries": 0,
+      "n_ls_trials": 8
+    },
+    {
+      "problem": "nonzero_residual",
+      "start": [
+        0.0
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "armijo",
+      "policy": "cost_based",
+      "cost": 0.03809403602625339,
+      "success": true,
+      "status": "converged_grad",
+      "grad_norm": 5.23684429154514e-10,
+      "iters": 10,
+      "nfev": 32,
+      "njev": 11,
+      "n_jac_calls": 11,
+      "n_jvp": 0,
+      "n_attempts": 10,
+      "n_accepted": 10,
+      "n_retries": 0,
+      "n_ls_trials": 20
+    },
+    {
+      "problem": "nonzero_residual",
+      "start": [
+        0.0
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "armijo",
+      "policy": "gain_ratio",
+      "cost": 0.038094036026253414,
+      "success": true,
+      "status": "converged_grad",
+      "grad_norm": 7.107662236549572e-10,
+      "iters": 8,
+      "nfev": 18,
+      "njev": 9,
+      "n_jac_calls": 9,
+      "n_jvp": 0,
+      "n_attempts": 8,
+      "n_accepted": 8,
+      "n_retries": 0,
+      "n_ls_trials": 8
+    },
+    {
+      "problem": "nonzero_residual",
+      "start": [
+        2.0
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "cost_decrease",
+      "policy": "cost_based",
+      "cost": 0.038094036026253414,
+      "success": true,
+      "status": "converged_grad",
+      "grad_norm": 7.326651896288894e-09,
+      "iters": 7,
+      "nfev": 16,
+      "njev": 8,
+      "n_jac_calls": 8,
+      "n_jvp": 0,
+      "n_attempts": 7,
+      "n_accepted": 7,
+      "n_retries": 0,
+      "n_ls_trials": 7
+    },
+    {
+      "problem": "nonzero_residual",
+      "start": [
+        2.0
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "cost_decrease",
+      "policy": "gain_ratio",
+      "cost": 0.038094036026253414,
+      "success": true,
+      "status": "converged_grad",
+      "grad_norm": 7.326651896288894e-09,
+      "iters": 7,
+      "nfev": 16,
+      "njev": 8,
+      "n_jac_calls": 8,
+      "n_jvp": 0,
+      "n_attempts": 7,
+      "n_accepted": 7,
+      "n_retries": 0,
+      "n_ls_trials": 7
+    },
+    {
+      "problem": "nonzero_residual",
+      "start": [
+        2.0
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "armijo",
+      "policy": "cost_based",
+      "cost": 0.038094036026253414,
+      "success": true,
+      "status": "converged_grad",
+      "grad_norm": 7.326651896288894e-09,
+      "iters": 7,
+      "nfev": 16,
+      "njev": 8,
+      "n_jac_calls": 8,
+      "n_jvp": 0,
+      "n_attempts": 7,
+      "n_accepted": 7,
+      "n_retries": 0,
+      "n_ls_trials": 7
+    },
+    {
+      "problem": "nonzero_residual",
+      "start": [
+        2.0
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "armijo",
+      "policy": "gain_ratio",
+      "cost": 0.038094036026253414,
+      "success": true,
+      "status": "converged_grad",
+      "grad_norm": 7.326651896288894e-09,
+      "iters": 7,
+      "nfev": 16,
+      "njev": 8,
+      "n_jac_calls": 8,
+      "n_jvp": 0,
+      "n_attempts": 7,
+      "n_accepted": 7,
+      "n_retries": 0,
+      "n_ls_trials": 7
+    },
+    {
+      "problem": "nonzero_residual",
+      "start": [
+        -2.0
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "cost_decrease",
+      "policy": "cost_based",
+      "cost": 0.038094036026253435,
+      "success": true,
+      "status": "converged_grad",
+      "grad_norm": 1.1368615771001345e-09,
+      "iters": 8,
+      "nfev": 18,
+      "njev": 9,
+      "n_jac_calls": 9,
+      "n_jvp": 0,
+      "n_attempts": 8,
+      "n_accepted": 8,
+      "n_retries": 0,
+      "n_ls_trials": 8
+    },
+    {
+      "problem": "nonzero_residual",
+      "start": [
+        -2.0
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "cost_decrease",
+      "policy": "gain_ratio",
+      "cost": 0.038094036026253435,
+      "success": true,
+      "status": "converged_grad",
+      "grad_norm": 1.1368615771001345e-09,
+      "iters": 8,
+      "nfev": 18,
+      "njev": 9,
+      "n_jac_calls": 9,
+      "n_jvp": 0,
+      "n_attempts": 8,
+      "n_accepted": 8,
+      "n_retries": 0,
+      "n_ls_trials": 8
+    },
+    {
+      "problem": "nonzero_residual",
+      "start": [
+        -2.0
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "armijo",
+      "policy": "cost_based",
+      "cost": 0.038094036026253435,
+      "success": true,
+      "status": "converged_grad",
+      "grad_norm": 1.1368615771001345e-09,
+      "iters": 8,
+      "nfev": 18,
+      "njev": 9,
+      "n_jac_calls": 9,
+      "n_jvp": 0,
+      "n_attempts": 8,
+      "n_accepted": 8,
+      "n_retries": 0,
+      "n_ls_trials": 8
+    },
+    {
+      "problem": "nonzero_residual",
+      "start": [
+        -2.0
+      ],
+      "scale": [
+        1.0
+      ],
+      "search": "armijo",
+      "policy": "gain_ratio",
+      "cost": 0.038094036026253435,
+      "success": true,
+      "status": "converged_grad",
+      "grad_norm": 1.1368615771001345e-09,
+      "iters": 8,
+      "nfev": 18,
+      "njev": 9,
+      "n_jac_calls": 9,
+      "n_jvp": 0,
+      "n_attempts": 8,
+      "n_accepted": 8,
+      "n_retries": 0,
+      "n_ls_trials": 8
+    }
+  ]
+}

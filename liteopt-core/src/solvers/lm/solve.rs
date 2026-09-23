@@ -9,7 +9,7 @@ use crate::solvers::common::trace::{SolverTracer, TraceRow};
 use crate::solvers::{Jacobian, LinearSolver};
 
 use super::types::{
-    LevenbergMarquardt, LevenbergMarquardtLineSearchMethod,
+    LevenbergMarquardt, LevenbergMarquardtDampingUpdate, LevenbergMarquardtLineSearchMethod,
     LevenbergMarquardtResult,
 };
 use super::workspace::LmWorkspace;
@@ -430,8 +430,54 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
                 it += 1;
                 continue;
             };
+            let mut predicted = f64::NAN;
             let actual = cost - trial;
-            let next_accepted = (lambda * self.lambda_down).max(self.lambda_min);
+            let mut ratio = f64::NAN;
+            if self.damping_update == LevenbergMarquardtDampingUpdate::GainRatio {
+                // Model the actual local displacement, including alpha, projection
+                // and retraction. Space::difference(x,y) must return y relative to x.
+                self.space.difference_into(&mut ws.tmp, &x, &ws.x_trial);
+                if ws.tmp.len() == n && ws.tmp.iter().all(|v| v.is_finite()) {
+                    jacobian_fn.mul(&x, &ws.j, &ws.tmp, &mut ws.jv);
+                    if ws.jv.iter().any(|v| !v.is_finite()) {
+                        finish!("linear_non_finite", false);
+                    }
+                    predicted = -dot(&ws.g, &ws.tmp) - 0.5 * dot(&ws.jv, &ws.jv);
+                    if predicted.is_finite() && predicted > 0.0 {
+                        ratio = actual / predicted;
+                    }
+                }
+                if !ratio.is_finite() || ratio <= 1e-4 {
+                    let row = TraceRow::iter(it)
+                        .cost(cost)
+                        .r_norm(r_norm)
+                        .grad_norm(grad_norm)
+                        .dx_norm(dx_norm)
+                        .step_size(alpha0)
+                        .alpha(ls.alpha)
+                        .ls_trials(ls_trials)
+                        .lambda(lambda)
+                        .reductions(predicted, actual, ratio)
+                        .note(if !ratio.is_finite() {
+                            "invalid_prediction"
+                        } else {
+                            "gain_ratio_rejected"
+                        });
+                    retry_with_damping!(row);
+                    it += 1;
+                    continue;
+                }
+            }
+            let next_accepted = if self.damping_update == LevenbergMarquardtDampingUpdate::CostBased
+                || ratio > 0.75
+            {
+                (lambda * self.lambda_down).max(self.lambda_min)
+            } else if ratio < 0.25 {
+                // Accepted but poorly predicted: be more conservative next time.
+                (lambda * self.lambda_up).min(self.lambda_max)
+            } else {
+                lambda
+            };
             let cost_before = cost;
             let r_before = r_norm;
             n_accepted += 1;
@@ -448,7 +494,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
                     .alpha(ls.alpha)
                     .lambda(ctx.lambda)
                     .lambda_next(lambda)
-                    .reductions(f64::NAN, actual, f64::NAN)
+                    .reductions(predicted, actual, ratio)
                     .note("accepted"),
             );
             it += 1;

@@ -1,5 +1,5 @@
 use liteopt_core::solvers::lm::{
-    LevenbergMarquardt, LevenbergMarquardtLineSearchMethod,
+    LevenbergMarquardt, LevenbergMarquardtDampingUpdate, LevenbergMarquardtLineSearchMethod,
     LevenbergMarquardtLinearSystem,
 };
 use pyo3::exceptions::PyValueError;
@@ -22,6 +22,7 @@ const LM_OPTIONS: &[&str] = &[
     "cg_max_iters",
     "cg_rtol",
     "cg_atol",
+    "damping_update",
     "lambda_min",
     "lambda_max",
     "lambda",
@@ -108,6 +109,19 @@ pub(super) fn lm(
         (None, None) => 1e-3,
     };
     let lambda = finite_nonnegative("lm: options.lambda", lambda)?;
+    let damping_update = match options
+        .string("damping_update")?
+        .as_deref()
+        .unwrap_or("cost_based")
+    {
+        "cost_based" => LevenbergMarquardtDampingUpdate::CostBased,
+        "gain_ratio" => LevenbergMarquardtDampingUpdate::GainRatio,
+        _ => {
+            return Err(PyValueError::new_err(
+                "lm: damping_update must be 'cost_based' or 'gain_ratio'",
+            ))
+        }
+    };
     let lambda_min = finite_gt(
         "lm: options.lambda_min",
         options.f64("lambda_min")?.unwrap_or(1e-12),
@@ -189,6 +203,7 @@ pub(super) fn lm(
         lambda,
         lambda_min,
         lambda_max,
+        damping_update,
         lambda_up,
         lambda_down,
         step_size,

@@ -45,6 +45,7 @@ pub struct LevenbergMarquardt<S: Space<Point = Vec<f64>, Tangent = Vec<f64>> = E
     pub linear_solver: LinearSolver,
     pub cg: CgOptions,
     pub linear_system: LevenbergMarquardtLinearSystem,
+    pub damping_update: LevenbergMarquardtDampingUpdate,
     pub lambda_min: f64,
     pub lambda_max: f64,
     pub lambda: f64,      // initial damping
@@ -73,6 +74,7 @@ impl<S: Space<Point = Vec<f64>, Tangent = Vec<f64>>> LevenbergMarquardt<S> {
             linear_solver: LinearSolver::Direct,
             cg: CgOptions::default(),
             linear_system: LevenbergMarquardtLinearSystem::LeftJjT,
+            damping_update: LevenbergMarquardtDampingUpdate::CostBased,
             lambda_min: 1e-12,
             lambda_max: f64::MAX,
             lambda: 1e-3,
@@ -115,3 +117,10 @@ pub enum LevenbergMarquardtLinearSystem {
     Qr,
 }
 
+/// Controls acceptance and damping adjustment after line search.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LevenbergMarquardtDampingUpdate {
+    #[default]
+    CostBased,
+    GainRatio,
+}

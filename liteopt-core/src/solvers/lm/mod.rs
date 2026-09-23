@@ -7,6 +7,6 @@ pub use crate::solvers::common::step_policy::{
     NoLineSearch,
 };
 pub use types::{
-    LevenbergMarquardt, LevenbergMarquardtLineSearchMethod,
+    LevenbergMarquardt, LevenbergMarquardtDampingUpdate, LevenbergMarquardtLineSearchMethod,
     LevenbergMarquardtLinearSystem, LevenbergMarquardtResult,
 };
