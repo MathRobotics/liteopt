@@ -1,0 +1,90 @@
+name: Build release distributions
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  wheels:
+    name: Wheel / ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04, python: "3.8" }
+          - { os: ubuntu-22.04, python: "3.13" }
+          - { os: windows-latest, python: "3.13" }
+          - { os: macos-15, python: "3.13" }
+          - { os: macos-15-intel, python: "3.13" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run Rust tests
+        run: cargo test --workspace
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --manifest-path liteopt-py/Cargo.toml --release --out dist/release
+          manylinux: auto
+      - name: Check wheel metadata
+        if: matrix.python != '3.8'
+        shell: bash
+        run: |
+          python -m pip install "twine>=6.1"
+          python -m twine check --strict dist/release/*
+      - name: Install wheel
+        shell: bash
+        run: |
+          python -m pip install pytest
+          python -m pip install --only-binary=:all: dist/release/*.whl
+      - name: Test installed wheel
+        run: python -m pytest liteopt-py/tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.python }}
+          path: dist/release/*.whl
+          if-no-files-found: error
+
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install build tools
+        run: python -m pip install "maturin>=1.10,<2" "twine>=6.1" pytest
+      - name: Check release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os, tomllib
+          from pathlib import Path
+          version = tomllib.loads(Path("liteopt-py/pyproject.toml").read_text())["project"]["version"]
+          assert os.environ["RELEASE_TAG"] == f"v{version}", "Tag must match package version"
+          PY
+      - name: Build and check source distribution
+        run: |
+          maturin sdist --manifest-path liteopt-py/Cargo.toml --out dist/release
+          python -m twine check --strict dist/release/*
+      - name: Install from source distribution
+        run: python -m pip install dist/release/*.tar.gz
+      - name: Test source installation
+        run: python -m pytest liteopt-py/tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/release/*.tar.gz
+          if-no-files-found: error

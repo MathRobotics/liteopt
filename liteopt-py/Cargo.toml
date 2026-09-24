@@ -1,6 +1,6 @@
 [package]
 name = "liteopt-py"
-version = "0.1.9"
+version = "0.2.0"
 edition = "2021"
 
 [lib]
@@ -10,4 +10,4 @@ crate-type = ["cdylib"]
 [dependencies]
 liteopt_core = { package = "liteopt", path = "../liteopt-core" }
 numpy = "0.27.1"
-pyo3 = { version = "0.27", features = ["extension-module", "abi3"] }
+pyo3 = { version = "0.27", features = ["extension-module", "abi3-py38"] }

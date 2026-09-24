@@ -2,7 +2,7 @@
 
 ## Release Notes
 
-### Unreleased
+### 0.2.0
 
 #### Breaking changes and migration
 
@@ -198,45 +198,70 @@ into `options`; move `verbose` and `history` into `debug`.
 
 ## Release Checklist
 
-Use `liteopt-py/pyproject.toml` as the canonical package version for Python
-releases. The Rust crate versions in `liteopt-core/Cargo.toml` and
-`liteopt-py/Cargo.toml` are internal workspace metadata unless the Rust crates
-are published separately.
+The Python package and both Rust workspace crates use version **0.2.0**.
+Keep all three manifests in sync; CI checks these versions and any local
+`Cargo.lock`. Lockfiles are currently ignored by this repository.
 
-1. Update `liteopt-py/pyproject.toml` `[project].version`.
-2. Run the Rust test suite:
+### Validation and local artifacts
+
+Run from the repository root, with a Rust toolchain and Python installed:
 
 ```bash
 cargo test --workspace
+python -m venv .venv-release
+# Windows: .venv-release\Scripts\activate
+source .venv-release/bin/activate
+python -m pip install "maturin>=1.10,<2" "twine>=6.1" pytest
+maturin build --manifest-path liteopt-py/Cargo.toml --release --sdist --out dist/0.2.0
+python -m twine check --strict dist/0.2.0/*
+python -m pip install --force-reinstall dist/0.2.0/*.whl
+python -m pytest liteopt-py/tests
 ```
 
-3. Recreate or refresh the Python development environment:
+Use a fresh output directory for each release. Do not mix older releases or
+wheels rebuilt with different contents. Check the wheel metadata, version,
+license, and `Requires-Python`, then install the `.tar.gz` in a separate clean
+environment and run the tests again to verify that the source archive builds.
+The source archive includes the Rust workspace, license, and Python tests.
+Source installations require Rust; wheel installations do not.
+
+### Platform wheels
+
+Run **Build release distributions** (`.github/workflows/release.yml`) manually
+on the intended commit, or push a matching version tag (`v0.2.0`). This builds
+and tests Linux x86_64, Windows x86_64, macOS arm64, and macOS x86_64 wheels,
+plus a source archive. Linux checks Python 3.8 and 3.13. Wheels use the CPython
+stable ABI starting at 3.8. Linux aarch64, musl, PyPy, and free-threaded Python
+wheels are not part of this workflow.
+
+Download the artifacts only after **all jobs succeed**. The two Linux jobs
+produce the same wheel filename; retain the Python 3.13 job's copy in the final
+upload directory. Check the combined directory again with `twine check --strict`.
+The workflow only builds and checks artifacts; it does not upload to PyPI.
+
+### Upload (separate, explicit release step)
+
+Confirm that the selected version has not already been used on PyPI and that
+the migration notes above are ready. Configure a project-scoped PyPI API token
+in your upload environment or credential manager; never commit it.
+
+Optionally upload the checked artifacts to TestPyPI first:
 
 ```bash
-cd liteopt-py
-uv sync --extra dev --reinstall
+python -m twine upload --repository testpypi dist/0.2.0/*
 ```
 
-4. Build and install the Python bindings into the uv environment:
+TestPyPI has a separate account/token. For an installation smoke test, install
+NumPy from PyPI first, then install liteopt from TestPyPI with `--no-deps`.
+After verifying the release artifacts, upload those same files to PyPI:
 
 ```bash
-uv run maturin develop --manifest-path Cargo.toml --release
+python -m twine upload dist/0.2.0/*
 ```
 
-5. Run the Python tests:
+Enter `__token__` as the username and the API token as the password when prompted.
+Finally, install `liteopt==0.2.0` in a new environment from PyPI and verify the
+solver examples. Create the GitHub release from `v0.2.0` with the migration notes.
 
-```bash
-uv run pytest tests
-```
-
-6. Build distribution artifacts:
-
-```bash
-uv run maturin build --manifest-path Cargo.toml --release
-```
-
-7. Inspect the wheel filename and metadata version, then create the release tag
-   using the Python package version, for example `v0.1.8`.
-
-If the local uv environment starts importing namespace-only packages such as
-`pytest` or `numpy`, remove `liteopt-py/.venv` and run the sync step again.
+References: [Maturin distribution guide](https://www.maturin.rs/distribution.html),
+[PyPA packaging guide](https://packaging.python.org/en/latest/tutorials/packaging-projects/).

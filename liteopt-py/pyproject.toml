@@ -4,12 +4,13 @@ build-backend = "maturin"
 
 [project]
 name = "liteopt"
-version = "0.1.9"
-description = "Lightweight gradient descent optimizer implemented in Rust"
+version = "0.2.0"
+description = "Lightweight gradient descent and nonlinear least-squares solvers implemented in Rust"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = ["numpy>=1.24.4"]
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
   { name = "Taiki Ishigaki", email = "taiki000ishigaki@gmail.com" }
 ]
@@ -17,7 +18,6 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
   "Programming Language :: Rust",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
 ]
 
@@ -26,6 +26,8 @@ Homepage = "https://github.com/MathRobotics/liteopt"
 Repository = "https://github.com/MathRobotics/liteopt"
 
 [tool.maturin]
+bindings = "pyo3"
+include = [{ path = "tests/**/*", format = "sdist" }]
 
 [dependency-groups]
 dev = [
@@ -38,5 +40,3 @@ dev = [
     "maturin>=1.10.2",
     "pytest>=7.4",
 ]
-
-# module-name = "liteopt"

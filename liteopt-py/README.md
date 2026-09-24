@@ -41,7 +41,7 @@ uv run python -c "import liteopt; print(liteopt.__file__)"
 
 ## Examples
 
-Bundled examples are documented in [`example/README.md`](example/README.md).
+Bundled examples are documented in [`example/README.md`](https://github.com/MathRobotics/liteopt/blob/main/liteopt-py/example/README.md).
 
 ## Choosing a Solver
 
@@ -398,13 +398,13 @@ x_star, cost, iters, r_norm, dx_norm, ok = liteopt.least_squares(
 )
 ```
 
-The bundled `manifold` example in [`example/run.py`](example/run.py) shows the
+The bundled `manifold` example in [`example/run.py`](https://github.com/MathRobotics/liteopt/blob/main/liteopt-py/example/run.py) shows the
 same pattern in a complete inverse-kinematics problem.
 
 ## Migration Notes
 
 For release notes and breaking-change migration examples, see
-[`../RELEASE.md`](../RELEASE.md).
+[`../RELEASE.md`](https://github.com/MathRobotics/liteopt/blob/main/RELEASE.md).
 
 ## GD diagnostics
 
@@ -560,7 +560,7 @@ explicit damping rows `[J; sqrt(lambda) I]`.
 QR can improve accuracy for nearly dependent columns, but cannot guarantee
 accurate small components with extreme scaling and weak LM damping. It also
 has a different time/memory tradeoff from the existing backends. See the
-[reproducible comparison](../benchmarks/README.md) for errors, timings, numerical
+[reproducible comparison](https://github.com/MathRobotics/liteopt/blob/main/benchmarks/README.md) for errors, timings, numerical
 rank policy, and limitations. A QR factorization failure does not affect the
 last accepted point; LM may increase damping and retry.
 
@@ -629,7 +629,7 @@ when using `gain_ratio`; unavailable/non-finite values appear as `None`.
 The terminal row retains the returned-point semantics. These diagnostics do
 not require extra residual/Jacobian evaluations.
 
-A [fixed comparison](../benchmarks/lm_damping.md) covers nonlinear problems,
+A [fixed comparison](https://github.com/MathRobotics/liteopt/blob/main/benchmarks/lm_damping.md) covers nonlinear problems,
 poor initial guesses, nonzero optimal residuals, variable scaling, and Armijo
 combinations. Neither policy dominates all evaluation counts, so the default
 remains `cost_based` and `gain_ratio` is explicit.
